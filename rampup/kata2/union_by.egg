@@ -1,0 +1,39 @@
+;; rank/size -> e-class 0
+;; uses/sum  -> e-class 3
+;;   ./target/release/semi-persistent rampup/kata2/union_by.egg --union-by rank
+;;   ./target/release/semi-persistent rampup/kata2/union_by.egg --union-by size
+;;   ./target/release/semi-persistent rampup/kata2/union_by.egg --union-by uses
+;;   ./target/release/semi-persistent rampup/kata2/union_by.egg --union-by sum
+
+(sort E)
+
+;; leaves are unextractable so extract reports the surviving e-class id
+(constructor a  () E :unextractable)
+(constructor a2 () E :unextractable)
+(constructor a3 () E :unextractable)
+(constructor b  () E :unextractable)
+
+(function p (E) E)
+(function q (E) E)
+(function r (E) E)
+
+;; a: size=3, uses=0
+(union (a) (a2))
+(union (a) (a3))
+
+;; b: size=1, uses=3
+(let pb (p (b)))
+(let qb (q (b)))
+(let rb (r (b)))
+
+;; size favors a; uses/sum favor b
+(union (a) (b))
+
+;; equalities are unchanged by the policy
+(check (= (a)  (b)))
+(check (= (a2) (b)))
+(check (= (a3) (b)))
+(check (= (a2) (a3)))
+
+;; failure exposes the surviving representative id
+(extract (a))

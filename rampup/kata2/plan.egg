@@ -1,0 +1,29 @@
+;; The current engine has no abstract-domain analysis yet
+;; EGRAPH_DUMP_PLAN=1 ./target/release/semi-persistent rampup/kata2/plan.egg
+
+(sort B)
+(sort I)
+
+(function True () B)
+(function Lt (I I) B)
+
+(function Lit (IBig) I)
+(function Add (I I) I)
+(function Ite (B I I) I)
+(function Clamp (I I I) I)
+
+(let three (Lit 3))
+(let ten (Lit 10))
+
+(let c (Lt three ten))
+(let t (Ite c three ten))
+
+(union c (True))
+
+(let u (Clamp t (Lit 0) (Lit 255)))
+
+
+;; (rewrite
+;;   (Clamp x (Lit 0) (Lit 255))
+;;   x
+;;   :when ((within x 0 255)))

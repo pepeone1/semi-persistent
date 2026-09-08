@@ -42,3 +42,10 @@ liblib.rlib
 
 # mdbook output for the user-facing book (doc/book/book.toml build-dir)
 /doc/book/book/
+
+
+
+
+# Binaries generated manually with rustc
+union_find_test
+toy_egraph_test

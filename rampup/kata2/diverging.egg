@@ -1,0 +1,19 @@
+;; ./target/release/semi-persistent rampup/kata2/diverging.egg
+
+(sort Expr)
+
+;; base value
+(constructor z () Expr)
+
+;; successor and wrapper
+(constructor s (Expr) Expr)
+(constructor up (Expr) Expr)
+
+;; each rewrite adds another s, so it does not naturally saturate
+(rewrite (up x) (up (s x)))
+
+;; add the starting term
+(let start (up (z)))
+
+;; stop after 10 iterations
+(run 10)

@@ -1,0 +1,22 @@
+;; ./target/release/semi-persistent rampup/kata2/saturating.egg
+
+(sort Expr)
+
+;; 2 constant expressions
+(constructor a () Expr)
+(constructor b () Expr)
+
+;; a unary function
+(function f (Expr) Expr)
+
+;; rewrite f(a) to f(b)
+(rewrite (f (a)) (f (b)))
+
+;; add f(a) to the e-graph
+(let x (f (a)))
+
+;; run equality saturation
+(run 10)
+
+;; verify that the rewrite made f(a) and f(b) equal
+(check (= (f (a)) (f (b))))
