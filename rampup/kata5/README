@@ -1,0 +1,17 @@
+## Kata 5
+
+Selected operation: `ExecTnum::neg`.
+
+The existing implementation only proves well-formedness (`r.wf()`).
+I added a containment postcondition requiring the result to contain
+the two's-complement negation of every concrete value represented by
+the input.
+
+Verification failed because `neg` is implemented using `bw_not().add(...)`.
+Although `add` already has a containment proof, `bw_not` currently only
+guarantees well-formedness. I then attempted to add a containment
+postcondition to `bw_not`, which exposed an additional proof obligation
+for the all-ones Tnum used by the XOR implementation.
+
+This suggests that proving containment for `neg` requires strengthening
+the contracts/proofs of its helper operations first.
