@@ -153,3 +153,83 @@ fn meet_matches_finite_u8_sets() {
         }
     }
 }
+
+macro_rules! join_cases {
+    ($name:ident, $domain:ident, $uint:ty) => {
+        #[test]
+        fn $name() {
+            use semi_persistent_abstract_domains::domains::$domain::Congruence;
+            let a = Congruence { modulus: 4, residue: 1 };
+            let b = Congruence { modulus: 6, residue: 3 };
+            for (left, right) in [(a, b), (b, a)] {
+                let r = left.join(&right);
+                assert_eq!((r.modulus, r.residue), (2, 1));
+            }
+            let same = a.join(&a);
+            assert_eq!((same.modulus, same.residue), (4, 1));
+            for (left, right) in [(a, Congruence::top()), (Congruence::top(), a)] {
+                let r = left.join(&right);
+                assert_eq!((r.modulus, r.residue), (1, 0));
+            }
+            let one = Congruence::constant(1);
+            let five = Congruence::constant(5);
+            let r = one.join(&five);
+            assert_eq!((r.modulus, r.residue), (4, 1));
+            assert_eq!(one.join(&one).modulus, 0);
+            let r = a.join(&five);
+            assert_eq!((r.modulus, r.residue), (4, 1));
+            let r = a.join(&Congruence::constant(2));
+            assert_eq!((r.modulus, r.residue), (1, 0));
+
+            let max = <$uint>::MAX;
+            let finite_one = Congruence { modulus: max, residue: 1 };
+            let r = finite_one.join(&five);
+            assert_eq!((r.modulus, r.residue), (4, 1));
+            let r = finite_one.join(&one);
+            assert_eq!((r.modulus, r.residue), (0, 1));
+            let r = Congruence::constant(0).join(&Congruence::constant(max));
+            assert_eq!((r.modulus, r.residue), (max, 0));
+            let r = Congruence::constant(max - 1).join(&Congruence::constant(max));
+            assert_eq!((r.modulus, r.residue), (1, 0));
+        }
+    };
+}
+
+join_cases!(join_u8, d8, u8);
+join_cases!(join_u16, d16, u16);
+join_cases!(join_u32, d32, u32);
+join_cases!(join_u64, d64, u64);
+
+#[test]
+fn join_covers_finite_u8_sets() {
+    use semi_persistent_abstract_domains::domains::d8::Congruence;
+    let mut classes = Vec::new();
+    for m in [0, 1, 2, 3, 4, 127, 128, 129, 200, 254, 255] {
+        for r in [0, 1, 2, 100, 127, 128, 200, 254, 255] {
+            let c = Congruence { modulus: m, residue: r }.normalize();
+            let values: Vec<bool> = (0..=u8::MAX).map(|x| {
+                if m == 0 { x == r } else { x % m == r % m }
+            }).collect();
+            classes.push((c, values));
+        }
+    }
+    for (a, av) in &classes {
+        for (b, bv) in &classes {
+            let result = a.join(b);
+            assert!(result.modulus == 0 || result.residue < result.modulus);
+            let reverse = b.join(a);
+            assert_eq!((result.modulus, result.residue), (reverse.modulus, reverse.residue));
+            for x in 0..=u8::MAX {
+                if av[x as usize] || bv[x as usize] {
+                    assert!(result.contains(x),
+                        "({}, {}) join ({}, {}) misses {x}", a.modulus, a.residue, b.modulus, b.residue);
+                }
+            }
+            for (upper, _) in &classes {
+                if a.refines(upper) && b.refines(upper) {
+                    assert!(result.refines(upper));
+                }
+            }
+        }
+    }
+}

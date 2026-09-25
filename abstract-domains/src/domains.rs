@@ -3004,6 +3004,75 @@ macro_rules! abstract_domain {
                     divides
                 }
                 
+                /// Divisors of the effective stride preserve every member's residue.
+                pub proof fn member_mod_divisor(self, x: $uint, d: nat)
+                    requires self.wf(), self.has(x), d > 0,
+                        (self.modulus > 0 && self.modulus <= $max_val - self.residue)
+                            ==> (self.modulus as nat) % d == 0,
+                    ensures (x as nat) % d == (self.residue as nat) % d,
+                {
+                    self.member_decomposition(x);
+                    if self.modulus > 0 && self.modulus <= $max_val - self.residue {
+                        normalize_preserves_divisor(x as nat, self.modulus as nat, d);
+                    }
+                }
+
+                /// Cover both operands using the GCD of effective strides and residue distance.
+                pub fn join(&self, other: &Congruence) -> (r: Congruence)
+                    requires self.wf(), other.wf(),
+                    ensures r.wf(),
+                        forall|x: $uint| #[trigger] self.has(x) ==> r.has(x),
+                        forall|x: $uint| #[trigger] other.has(x) ==> r.has(x),
+                {
+                    let s1 = if self.modulus > $max_val - self.residue { 0 } else { self.modulus };
+                    let s2 = if other.modulus > $max_val - other.residue { 0 } else { other.modulus };
+                    let delta = if self.residue >= other.residue {
+                        self.residue - other.residue
+                    } else {
+                        other.residue - self.residue
+                    };
+                    let stride_gcd = gcd(s1, s2);
+                    let modulus = gcd(stride_gcd, delta);
+                    if modulus == 0 {
+                        proof {
+                            assert(s1 == 0 && s2 == 0 && delta == 0);
+                            assert forall|x: $uint| #[trigger] self.has(x) implies x == self.residue by {
+                                self.member_decomposition(x);
+                            }
+                            assert forall|x: $uint| #[trigger] other.has(x) implies x == self.residue by {
+                                other.member_decomposition(x);
+                            }
+                        }
+                        return Congruence::constant(self.residue);
+                    }
+                    proof {
+                        if stride_gcd > 0 {
+                            normalize_preserves_divisor(s1 as nat, stride_gcd as nat, modulus as nat);
+                            normalize_preserves_divisor(s2 as nat, stride_gcd as nat, modulus as nat);
+                        }
+                        assert((s1 as nat) % (modulus as nat) == 0);
+                        assert((s2 as nat) % (modulus as nat) == 0);
+                        if self.residue >= other.residue {
+                            vstd::arithmetic::div_mod::lemma_mod_equivalence(
+                                self.residue as int, other.residue as int, modulus as int);
+                        } else {
+                            vstd::arithmetic::div_mod::lemma_mod_equivalence(
+                                other.residue as int, self.residue as int, modulus as int);
+                        }
+                        assert(self.residue % modulus == other.residue % modulus);
+                    }
+                    let r = Congruence { modulus, residue: self.residue % modulus };
+                    proof {
+                        assert forall|x: $uint| #[trigger] self.has(x) implies r.has(x) by {
+                            self.member_mod_divisor(x, modulus as nat);
+                        }
+                        assert forall|x: $uint| #[trigger] other.has(x) implies r.has(x) by {
+                            other.member_mod_divisor(x, modulus as nat);
+                        }
+                    }
+                    r
+                }
+
                 /// Exact intersection; None marks emptiness pending shared Bottom integration.
                 pub fn meet(&self, other: &Congruence) -> (result: Option<Congruence>)
                     requires self.wf(), other.wf(),
