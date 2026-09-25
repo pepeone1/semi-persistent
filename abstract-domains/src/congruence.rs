@@ -4,6 +4,7 @@
 //! This semantic core intentionally does not implement `Domain`: its lattice
 //! operations belong to the subsequent Congruence core change.
 #![allow(unused_imports, unused_variables)]
+use crate::arithmetic::*;
 use crate::word::Word;
 use vstd::arithmetic::div_mod::*;
 use vstd::prelude::*;
@@ -55,6 +56,70 @@ impl<W: Word> Congruence<W> {
     pub fn parts(&self) -> (r: (W, W))
         ensures r.0 == self.modulus(), r.1 == self.residue(),
     { (self.modulus, self.residue) }
+
+    /// The canonical residue is the least member.
+    pub proof fn residue_member(&self)
+        requires self.wf(),
+        ensures self.has(self.residue()),
+    {
+        if self.modulus.view() > 0 {
+            lemma_small_mod(self.residue.view(), self.modulus.view());
+        }
+    }
+
+    pub proof fn member_decomposition(&self, x: W)
+        requires self.wf(), self.has(x),
+        ensures x.view() >= self.residue().view(),
+            self.modulus().view() > 0 ==> x.view() == self.residue().view()
+                + self.modulus().view() * (x.view() / self.modulus().view()),
+            self.modulus().view() == 0 ==> x == self.residue(),
+    {
+        self.lemma_least(x);
+        if self.modulus.view() > 0 {
+            lemma_fundamental_div_mod(x.view() as int, self.modulus.view() as int);
+        }
+    }
+
+    /// Decide exact containment over representable words.
+    pub fn refines(&self, other: &Self) -> (result: bool)
+        requires self.wf(), other.wf(),
+        ensures result == (forall|x: W| #[trigger] self.has(x) ==> other.has(x)),
+    {
+        proof { self.residue_member(); }
+        if !other.contains(self.residue) { return false; }
+        if self.modulus.eq(W::zero()) { return true; }
+        let ghost second = self.lemma_second();
+        proof { assert(self.has(second)); }
+        if other.modulus.eq(W::zero()) {
+            proof { assert(!other.has(second)); }
+            return false;
+        }
+        let divides = self.modulus.urem(other.modulus).eq(W::zero());
+        proof {
+            if divides {
+                lemma_fundamental_div_mod(self.modulus.view() as int, other.modulus.view() as int);
+                assert forall|x: W| #[trigger] self.has(x) implies other.has(x) by {
+                    self.member_decomposition(x);
+                    let m = self.modulus.view() as int;
+                    let n = other.modulus.view() as int;
+                    let r = self.residue.view() as int;
+                    let q = x.view() as int / m;
+                    let d = m / n;
+                    assert(x.view() as int == r + n * (d * q)) by (nonlinear_arith)
+                        requires x.view() as int == r + m * q, m == n * d;
+                    congruence_shift(x.view() as int, r, n, d * q);
+                }
+            } else {
+                if other.has(second) {
+                    lemma_mod_equivalence(second.view() as int, self.residue.view() as int,
+                        other.modulus.view() as int);
+                    assert(false);
+                }
+                assert(!other.has(second));
+            }
+        }
+        divides
+    }
 
     pub fn contains(&self, x: W) -> (r: bool)
         ensures r == self.gamma(x), r == self.has(x),
