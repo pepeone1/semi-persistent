@@ -122,6 +122,58 @@ impl<W: Word> Congruence<W> {
         divides
     }
 
+    /// A divisor of the canonical stride preserves every member's residue.
+    pub proof fn member_mod_divisor(&self, x: W, d: nat)
+        requires self.wf(), self.has(x), d > 0,
+            self.modulus().view() > 0 ==> self.modulus().view() % d == 0,
+        ensures x.view() % d == self.residue().view() % d,
+    {
+        if self.modulus.view() > 0 {
+            normalize_preserves_divisor(x.view(), self.modulus.view(), d);
+        }
+    }
+
+    /// Sound upper bound using the GCD of strides and residue distance.
+    pub fn join(&self, other: &Self) -> (r: Self)
+        requires self.wf(), other.wf(),
+        ensures r.wf(),
+            forall|x: W| #[trigger] self.has(x) ==> r.has(x),
+            forall|x: W| #[trigger] other.has(x) ==> r.has(x),
+    {
+        let a = self.residue.to_u64();
+        let b = other.residue.to_u64();
+        let distance = if a >= b { a - b } else { b - a };
+        proof {
+            self.residue.lemma_view_bounded();
+            other.residue.lemma_view_bounded();
+        }
+        let delta = W::from_u64(distance);
+        let stride_gcd = gcd(self.modulus, other.modulus);
+        let modulus = gcd(stride_gcd, delta);
+        if modulus.eq(W::zero()) {
+            proof { W::lemma_view_injective(self.residue, other.residue); }
+            return Self::constant(self.residue);
+        }
+        proof {
+            lemma_gcd_divisor_iff(self.modulus.view(), other.modulus.view(), modulus.view());
+            if a >= b {
+                lemma_mod_equivalence(a as int, b as int, modulus.view() as int);
+            } else {
+                lemma_mod_equivalence(b as int, a as int, modulus.view() as int);
+            }
+        }
+        let r = Self::new(modulus, self.residue);
+        proof {
+            assert forall|x: W| #[trigger] self.has(x) implies r.has(x) by {
+                self.member_mod_divisor(x, modulus.view());
+            }
+            assert forall|x: W| #[trigger] other.has(x) implies r.has(x) by {
+                other.member_mod_divisor(x, modulus.view());
+            }
+        }
+        r
+    }
+
     /// Exact intersection, with emptiness outside the domain.
     pub fn meet(&self, other: &Self) -> (result: BotOr<Self>)
         requires self.wf(), other.wf(),
