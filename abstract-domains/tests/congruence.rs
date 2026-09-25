@@ -393,3 +393,78 @@ fn join_covers_finite_u8_sets() {
         }
     }
 }
+
+macro_rules! add_cases {
+    ($name:ident, $domain:ident, $uint:ty) => {
+        #[test]
+        fn $name() {
+            use semi_persistent_abstract_domains::congruence::Congruence;
+            type C = Congruence<$uint>;
+            let max = <$uint>::MAX;
+            for (x, y) in [(0, 0), (1, 2), (max, 1), (max, max)] {
+                let r = C::constant(x).add(&C::constant(y));
+                assert_eq!(r.parts(), (0, x.wrapping_add(y)));
+            }
+            let finite_one = C::new(max, 1);
+            let r = finite_one.add(&C::constant(max));
+            assert_eq!(r.parts(), (0, 0));
+            let odd = C::new(2, 1);
+            let r = odd.add(&odd);
+            assert_eq!(r.parts(), (2, 0));
+            let four = C::new(4, 3);
+            let r = four.add(&C::constant(2));
+            assert_eq!(r.parts(), (4, 1));
+            let top = C::top();
+            for (a, b) in [(&odd, &top), (&top, &odd)] {
+                let r = a.add(b);
+                assert_eq!(r.parts(), (1, 0));
+            }
+            let multiples_of_three = C::new(3, 0);
+            let r = multiples_of_three.add(&multiples_of_three);
+            assert_eq!(r.parts(), (1, 0));
+            assert!(r.contains(max.wrapping_add(3)));
+        }
+    };
+}
+
+add_cases!(add_u8, d8, u8);
+add_cases!(add_u16, d16, u16);
+add_cases!(add_u32, d32, u32);
+add_cases!(add_u64, d64, u64);
+
+#[test]
+fn addition_covers_finite_u8_sums() {
+    use semi_persistent_abstract_domains::congruence::Congruence;
+    type C = Congruence<u8>;
+    let mut classes = Vec::new();
+    for m in [0, 1, 2, 3, 4, 127, 128, 129, 200, 254, 255] {
+        for r in [0, 1, 2, 100, 127, 128, 200, 254, 255] {
+            let c = C::new(m, r).normalize();
+            let values: Vec<u8> = (0..=u8::MAX)
+                .filter(|x| if m == 0 { *x == r } else { x % m == r % m })
+                .collect();
+            classes.push((c, values));
+        }
+    }
+    for (a, av) in &classes {
+        for (b, bv) in &classes {
+            let result = a.add(b);
+            let (m, r) = result.parts();
+            assert!(m == 0 || (r < m && u16::from(r) + u16::from(m) <= 255));
+            let reverse = b.add(a);
+            assert_eq!(result.parts(), reverse.parts());
+            for &x in av {
+                for &y in bv {
+                    assert!(
+                        result.contains(x.wrapping_add(y)),
+                        "({}, {}) + ({}, {}) misses {x} + {y}",
+                        a.parts().0,
+                        a.parts().1,
+                        b.parts().0,
+                        b.parts().1
+                    );
+                }
+            }
+        }
+    }
+}

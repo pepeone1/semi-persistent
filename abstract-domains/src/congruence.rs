@@ -1,11 +1,12 @@
 // Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 //! Canonical, nonempty congruences over unsigned finite-width words.
-//! This semantic core intentionally does not implement `Domain`: its lattice
-//! operations belong to the subsequent Congruence core change.
+//! Core operations are inherent methods; meet uses external `BotOr` and
+//! wrapping addition is specified by `Unsigned<W>` semantics.
 #![allow(unused_imports, unused_variables)]
 use crate::arithmetic::*;
 use crate::lattice::BotOr;
+use crate::semantics::*;
 use crate::word::Word;
 use vstd::arithmetic::div_mod::*;
 use vstd::prelude::*;
@@ -35,6 +36,23 @@ proof fn lemma_next(m: nat, r: nat, x: nat)
     lemma_fundamental_div_mod(x as int, m as int);
     assert(x == r || r + m <= x) by (nonlinear_arith)
         requires m > 0, x == m * (x / m) + r;
+}
+
+/// Bridge executable word addition to the shared unsigned semantics.
+fn wrapping_sum<W: Word>(a: W, b: W) -> (r: W)
+    ensures r == Unsigned::<W>::add(a, b),
+        r.view() == (a.view() + b.view()) % W::modulus(),
+{
+    let max = W::max().to_u64();
+    let period = max as u128 + 1;
+    let sum = a.to_u64() as u128 + b.to_u64() as u128;
+    let residue = sum % period;
+    let r = W::from_u64(residue as u64);
+    proof {
+        W::lemma_from_int((a.view() + b.view()) as int);
+        W::lemma_view_injective(r, Unsigned::<W>::add(a, b));
+    }
+    r
 }
 
 impl<W: Word> Congruence<W> {
@@ -169,6 +187,46 @@ impl<W: Word> Congruence<W> {
             }
             assert forall|x: W| #[trigger] other.has(x) implies r.has(x) by {
                 other.member_mod_divisor(x, modulus.view());
+            }
+        }
+        r
+    }
+
+    /// Cover all wrapping sums using gcd(strides, machine modulus).
+    pub fn add(&self, other: &Self) -> (r: Self)
+        requires self.wf(), other.wf(),
+        ensures r.wf(),
+            forall|x: W, y: W| #[trigger] self.has(x) && #[trigger] other.has(y)
+                ==> r.has(Unsigned::<W>::add(x, y)),
+    {
+        let stride = gcd(self.modulus, other.modulus);
+        let sum = wrapping_sum(self.residue, other.residue);
+        if stride.eq(W::zero()) {
+            return Self::constant(sum);
+        }
+        let wide_modulus = gcd_machine_modulus(stride);
+        proof {
+            W::lemma_modulus();
+            stride.lemma_view_bounded();
+            assert(wide_modulus <= stride.view()) by (nonlinear_arith)
+                requires wide_modulus > 0, stride.view() > 0,
+                    stride.view() % (wide_modulus as nat) == 0;
+        }
+        let modulus = W::from_u64(wide_modulus as u64);
+        let r = Self::new(modulus, sum);
+        proof {
+            lemma_gcd_divisor_iff(self.modulus.view(), other.modulus.view(), modulus.view());
+            lemma_wrapping_congruence::<W>(stride.view(),
+                (self.residue.view() + other.residue.view()) as int);
+            assert forall|x: W, y: W| #[trigger] self.has(x) && #[trigger] other.has(y)
+                implies r.has(Unsigned::<W>::add(x, y)) by {
+                self.member_mod_divisor(x, modulus.view());
+                other.member_mod_divisor(y, modulus.view());
+                lemma_add_mod_noop(x.view() as int, y.view() as int, modulus.view() as int);
+                lemma_add_mod_noop(self.residue.view() as int, other.residue.view() as int,
+                    modulus.view() as int);
+                lemma_wrapping_congruence::<W>(stride.view(), (x.view() + y.view()) as int);
+                W::lemma_from_int((x.view() + y.view()) as int);
             }
         }
         r
