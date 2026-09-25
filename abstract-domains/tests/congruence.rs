@@ -312,3 +312,93 @@ fn meet_matches_finite_u8_sets() {
         }
     }
 }
+
+macro_rules! join_cases {
+    ($name:ident, $domain:ident, $uint:ty) => {
+        #[test]
+        fn $name() {
+            use semi_persistent_abstract_domains::congruence::Congruence;
+            type C = Congruence<$uint>;
+            let a = C::new(4, 1);
+            let b = C::new(6, 3);
+            for (left, right) in [(&a, &b), (&b, &a)] {
+                let r = left.join(right);
+                assert_eq!(r.parts(), (2, 1));
+            }
+            let same = a.join(&a);
+            assert_eq!(same.parts(), (4, 1));
+            let top = C::top();
+            for (left, right) in [(&a, &top), (&top, &a)] {
+                let r = left.join(right);
+                assert_eq!(r.parts(), (1, 0));
+            }
+            let one = C::constant(1);
+            let five = C::constant(5);
+            let r = one.join(&five);
+            assert_eq!(r.parts(), (4, 1));
+            assert_eq!(one.join(&one).parts().0, 0);
+            let r = a.join(&five);
+            assert_eq!(r.parts(), (4, 1));
+            let r = a.join(&C::constant(2));
+            assert_eq!(r.parts(), (1, 0));
+
+            let max = <$uint>::MAX;
+            let finite_one = C::new(max, 1);
+            let r = finite_one.join(&five);
+            assert_eq!(r.parts(), (4, 1));
+            let r = finite_one.join(&one);
+            assert_eq!(r.parts(), (0, 1));
+            let r = C::constant(0).join(&C::constant(max));
+            assert_eq!(r.parts(), (max, 0));
+            let r = C::constant(max - 1).join(&C::constant(max));
+            assert_eq!(r.parts(), (1, 0));
+        }
+    };
+}
+
+join_cases!(join_u8, d8, u8);
+join_cases!(join_u16, d16, u16);
+join_cases!(join_u32, d32, u32);
+join_cases!(join_u64, d64, u64);
+
+#[test]
+fn join_covers_finite_u8_sets() {
+    use semi_persistent_abstract_domains::congruence::Congruence;
+    type C = Congruence<u8>;
+    let mut classes = Vec::new();
+    for m in [0, 1, 2, 3, 4, 127, 128, 129, 200, 254, 255] {
+        for r in [0, 1, 2, 100, 127, 128, 200, 254, 255] {
+            let c = C::new(m, r).normalize();
+            let values: Vec<bool> = (0..=u8::MAX)
+                .map(|x| if m == 0 { x == r } else { x % m == r % m })
+                .collect();
+            classes.push((c, values));
+        }
+    }
+    for (a, av) in &classes {
+        for (b, bv) in &classes {
+            let result = a.join(b);
+            let (m, r) = result.parts();
+            assert!(m == 0 || (r < m && u16::from(r) + u16::from(m) <= 255));
+            let reverse = b.join(a);
+            assert_eq!(result.parts(), reverse.parts());
+            for x in 0..=u8::MAX {
+                if av[x as usize] || bv[x as usize] {
+                    assert!(
+                        result.contains(x),
+                        "({}, {}) join ({}, {}) misses {x}",
+                        a.parts().0,
+                        a.parts().1,
+                        b.parts().0,
+                        b.parts().1
+                    );
+                }
+            }
+            for (upper, _) in &classes {
+                if a.refines(upper) && b.refines(upper) {
+                    assert!(result.refines(upper));
+                }
+            }
+        }
+    }
+}
