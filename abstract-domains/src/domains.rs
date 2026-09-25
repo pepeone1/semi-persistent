@@ -2873,7 +2873,7 @@ macro_rules! abstract_domain {
             // ============================================================
             #[derive(Clone, Copy)]
             pub struct Congruence {
-                // Bottom -> Tsai-Ching production Bottom design
+                // Bottom integration is pending the shared design.
                 pub modulus: $uint,
                 pub residue: $uint,
             }
@@ -2906,28 +2906,145 @@ macro_rules! abstract_domain {
                     }
                 }
 
-                pub fn constant(x: $uint) -> Congruence {
-                    // {x}
+                /// The canonical residue is always a member.
+                pub proof fn residue_member(self)
+                    requires self.wf(),
+                    ensures self.has(self.residue),
+                {
+                    if self.modulus > 0 {
+                        vstd::arithmetic::div_mod::lemma_small_mod(
+                            self.residue as nat, self.modulus as nat);
+                    }
+                }
+
+                /// Members are the residue plus nonnegative multiples of the modulus.
+                pub proof fn member_decomposition(self, x: $uint)
+                    requires self.wf(), self.has(x),
+                    ensures x >= self.residue,
+                        self.modulus > 0 ==> x as int == self.residue as int
+                            + (self.modulus as int) * ((x as int) / (self.modulus as int)),
+                        (self.modulus == 0 || self.modulus > $max_val - self.residue)
+                            ==> x == self.residue,
+                {
+                    if self.modulus > 0 {
+                        vstd::arithmetic::div_mod::lemma_fundamental_div_mod(
+                            x as int, self.modulus as int);
+                        let m = self.modulus as int;
+                        let r = self.residue as int;
+                        let q = (x as int) / m;
+                        assert(x as int >= r) by (nonlinear_arith)
+                            requires x as int == r + m * q, m > 0, q >= 0;
+                        if self.modulus > $max_val - self.residue {
+                            assert(x as int == r) by (nonlinear_arith)
+                                requires x as int == r + m * q, q >= 0,
+                                    m > ($max_val as int) - r, m > 0,
+                                    (x as int) <= ($max_val as int);
+                        }
+                    }
+                }
+                
+                /// The second progression element is a member when it fits.
+                pub proof fn second_member(self, second: $uint)
+                    requires self.wf(), self.modulus > 0,
+                        second as int == self.residue as int + self.modulus as int,
+                    ensures self.has(second), second > self.residue,
+                {
+                    self.residue_member();
+                    congruence_shift(second as int, self.residue as int, self.modulus as int, 1);
+                }
+
+                /// Decide exact containment over representable values.
+                pub fn refines(&self, other: &Congruence) -> (result: bool)
+                    requires self.wf(), other.wf(),
+                    ensures result == (forall|x: $uint| #[trigger] self.has(x) ==> other.has(x)),
+                {
+                    proof { self.residue_member(); }
+                    if !other.contains(self.residue) {
+                        return false;
+                    }
+                    if self.modulus == 0 || self.modulus > $max_val - self.residue {
+                        proof {
+                            assert forall|x: $uint| #[trigger] self.has(x) implies other.has(x) by {
+                                self.member_decomposition(x);
+                            }
+                        }
+                        return true;
+                    }
+                    let second = self.residue + self.modulus;
+                    proof { self.second_member(second); }
+                    if other.modulus == 0 {
+                        proof { assert(!other.has(second)); }
+                        return false;
+                    }
+                    let divides = self.modulus % other.modulus == 0;
+                    proof {
+                        if divides {
+                            vstd::arithmetic::div_mod::lemma_fundamental_div_mod(
+                                self.modulus as int, other.modulus as int);
+                            assert forall|x: $uint| #[trigger] self.has(x) implies other.has(x) by {
+                                self.member_decomposition(x);
+                                let m = self.modulus as int;
+                                let n = other.modulus as int;
+                                let r = self.residue as int;
+                                let q = (x as int) / m;
+                                let d = m / n;
+                                assert(x as int == r + n * (d * q)) by (nonlinear_arith)
+                                    requires x as int == r + m * q, m == n * d;
+                                congruence_shift(x as int, r, n, d * q);
+                            }
+                        } else {
+                            if other.has(second) {
+                                vstd::arithmetic::div_mod::lemma_mod_equivalence(
+                                    second as int, self.residue as int, other.modulus as int);
+                                assert(false);
+                            }
+                            assert(!other.has(second));
+                        }
+                    }
+                    divides
+                }
+
+                /// Construct the singleton containing x.
+                pub fn constant(x: $uint) -> (r: Congruence)
+                    ensures r.wf(), r.modulus == 0, r.residue == x,
+                        forall|v: $uint| #[trigger] r.has(v) <==> v == x,
+                {
                     Congruence {
                         modulus: 0,
                         residue: x,
                     }
                 }
 
-                pub fn top() -> Congruence {
-                    // all values
+                /// Construct the set of all representable values.
+                pub fn top() -> (r: Congruence)
+                    ensures r.wf(), r.modulus == 1, r.residue == 0,
+                        forall|v: $uint| #[trigger] r.has(v),
+                {
                     Congruence {
                         modulus: 1,
                         residue: 0,
                     }
                 }
 
-                // normalization
-                pub fn normalize(&self) -> Congruence {
+                /// Canonicalize the residue while preserving the modulus.
+                pub fn normalize(&self) -> (r: Congruence)
+                    ensures r.wf(), r.modulus == self.modulus,
+                        r.residue == if self.modulus == 0 { self.residue }
+                            else { self.residue % self.modulus },
+                        forall|x: $uint| #[trigger] r.has(x) <==>
+                            if self.modulus == 0 { x == self.residue }
+                            else { x % self.modulus == self.residue % self.modulus },
+                        self.wf() ==> r == *self,
+                {
                     if self.modulus == 0 {
-                        // Singleton: (0, x)
                         *self
                     } else {
+                        proof {
+                            if self.wf() {
+                                vstd::arithmetic::div_mod::lemma_small_mod(
+                                    self.residue as nat, self.modulus as nat);
+                            }
+                        }
                         Congruence {
                             modulus: self.modulus,
                             residue: self.residue % self.modulus,
