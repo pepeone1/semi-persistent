@@ -212,3 +212,103 @@ fn refinement_matches_finite_u8_sets() {
         }
     }
 }
+
+use semi_persistent_abstract_domains::lattice::BotOr;
+
+fn meet_value<W>(result: BotOr<Congruence<W>>) -> Congruence<W> {
+    match result {
+        BotOr::Val(value) => value,
+        BotOr::Bot => panic!("expected nonempty intersection"),
+    }
+}
+
+macro_rules! meet_cases {
+    ($name:ident, $domain:ident, $uint:ty) => {
+        #[test]
+        fn $name() {
+            use semi_persistent_abstract_domains::congruence::Congruence;
+            type C = Congruence<$uint>;
+            let a = C::new(6, 1);
+            let b = C::new(4, 3);
+            let merged = meet_value(a.meet(&b));
+            assert_eq!(merged.parts(), (12, 7));
+            assert!(matches!(a.meet(&C::new(4, 2)), BotOr::Bot));
+            let top = C::top();
+            for (left, right) in [(&a, &top), (&top, &a), (&a, &a)] {
+                let result = meet_value(left.meet(right));
+                assert_eq!(result.parts(), a.parts());
+            }
+            for x in [0, 7] {
+                let singleton = C::constant(x);
+                for result in [a.meet(&singleton), singleton.meet(&a)] {
+                    if x == 7 {
+                        let r = meet_value(result);
+                        assert_eq!(r.parts(), (0, x));
+                    } else {
+                        assert!(matches!(result, BotOr::Bot));
+                    }
+                }
+                assert!(meet_value(singleton.meet(&singleton)).contains(x));
+                assert!(matches!(singleton.meet(&C::constant(x + 1)), BotOr::Bot));
+            }
+            let max = <$uint>::MAX;
+            for x in [0, 1, max] {
+                let left = C::new(max, x % max);
+                let right = C::new(max - 1, x % (max - 1));
+                for result in [left.meet(&right), right.meet(&left)] {
+                    let r = meet_value(result);
+                    assert_eq!(r.parts(), (0, x));
+                }
+            }
+            let left = C::new(max, max - 1);
+            let right = C::new(max - 1, max - 2);
+            assert!(matches!(left.meet(&right), BotOr::Bot));
+            assert!(matches!(right.meet(&left), BotOr::Bot));
+        }
+    };
+}
+
+meet_cases!(meet_u8, d8, u8);
+meet_cases!(meet_u16, d16, u16);
+meet_cases!(meet_u32, d32, u32);
+meet_cases!(meet_u64, d64, u64);
+
+#[test]
+fn meet_matches_finite_u8_sets() {
+    use semi_persistent_abstract_domains::congruence::Congruence;
+    type C = Congruence<u8>;
+    let mut classes = Vec::new();
+    for m in [0, 1, 2, 3, 4, 127, 128, 129, 200, 254, 255] {
+        for r in [0, 1, 2, 100, 127, 128, 200, 254, 255] {
+            let c = C::new(m, r).normalize();
+            let values: Vec<bool> = (0..=u8::MAX)
+                .map(|x| if m == 0 { x == r } else { x % m == r % m })
+                .collect();
+            classes.push((c, values));
+        }
+    }
+    for (a, av) in &classes {
+        for (b, bv) in &classes {
+            let result = a.meet(b);
+            if let BotOr::Val(r) = &result {
+                let (m, r) = r.parts();
+                assert!(m == 0 || (r < m && u16::from(r) + u16::from(m) <= 255));
+            }
+            let mut nonempty = false;
+            for x in 0..=u8::MAX {
+                let expected = av[x as usize] && bv[x as usize];
+                nonempty |= expected;
+                assert_eq!(
+                    matches!(&result, BotOr::Val(r) if r.contains(x)),
+                    expected,
+                    "({}, {}) meet ({}, {}) at {x}",
+                    a.parts().0,
+                    a.parts().1,
+                    b.parts().0,
+                    b.parts().1
+                );
+            }
+            assert_eq!(matches!(result, BotOr::Val(_)), nonempty);
+        }
+    }
+}

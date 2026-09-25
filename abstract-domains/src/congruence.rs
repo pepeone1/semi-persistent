@@ -4,6 +4,7 @@
 //! This semantic core intentionally does not implement `Domain`: its lattice
 //! operations belong to the subsequent Congruence core change.
 use crate::arithmetic::*;
+use crate::lattice::BotOr;
 use vstd::arithmetic::div_mod::*;
 use crate::word::Word;
 use vstd::prelude::*;
@@ -96,6 +97,64 @@ impl<W: Word> Congruence<W> {
             }
         }
         divides
+    }
+
+    /// Exact intersection, with emptiness outside the domain.
+    pub fn meet(&self, other: &Self) -> (result: BotOr<Self>)
+        requires self.wf(), other.wf(),
+        ensures match result {
+            BotOr::Val(r) => r.wf() && (forall|x: W| #[trigger] r.has(x)
+                <==> self.has(x) && other.has(x)),
+            BotOr::Bot => forall|x: W| #[trigger] self.has(x) ==> !other.has(x),
+        },
+    {
+        if self.modulus.eq(W::zero()) {
+            return if other.contains(self.residue) {
+                BotOr::Val(*self)
+            } else { BotOr::Bot };
+        }
+        if other.modulus.eq(W::zero()) {
+            return if self.contains(other.residue) {
+                BotOr::Val(*other)
+            } else { BotOr::Bot };
+        }
+        proof {
+            lemma_small_mod(self.residue.view(), self.modulus.view());
+            lemma_small_mod(other.residue.view(), other.modulus.view());
+        }
+        let merged = crt_merge(self.modulus, self.residue, other.modulus, other.residue);
+        match merged {
+            CrtMergeResult::Class { modulus, residue } => {
+                let r = Self::new(modulus, residue);
+                proof {
+                    lemma_small_mod(residue.view(), modulus.view());
+                    assert forall|x: W| #[trigger] r.has(x) <==> self.has(x) && other.has(x) by {
+                        assert(merged.has(x) == is_common_congruence_solution(x.view() as int,
+                            self.modulus.view(), self.residue.view(), other.modulus.view(), other.residue.view()));
+                    }
+                }
+                BotOr::Val(r)
+            },
+            CrtMergeResult::Singleton { value } => {
+                let r = Self::constant(value);
+                proof {
+                    assert forall|x: W| #[trigger] r.has(x) <==> self.has(x) && other.has(x) by {
+                        assert(merged.has(x) == is_common_congruence_solution(x.view() as int,
+                            self.modulus.view(), self.residue.view(), other.modulus.view(), other.residue.view()));
+                    }
+                }
+                BotOr::Val(r)
+            },
+            CrtMergeResult::Empty => {
+                proof {
+                    assert forall|x: W| #[trigger] self.has(x) implies !other.has(x) by {
+                        assert(merged.has(x) == is_common_congruence_solution(x.view() as int,
+                            self.modulus.view(), self.residue.view(), other.modulus.view(), other.residue.view()));
+                    }
+                }
+                BotOr::Bot
+            },
+        }
     }
 
     pub fn contains(&self, x: W) -> (r: bool)
