@@ -2,11 +2,13 @@
 
 Last refreshed: 2026-10-01.
 
-## Current result
+## Last verified #106 baseline (before the #112 transplant)
 
 `cargo verus verify` reports 0 errors; CI runs it on every pull request. This
 file does not record the number of verified items, because every change to the
 crate moves it.
+
+Verification of the transplanted #112 tree is pending.
 
 The project source contains no executable `admit()` or `assume()` calls. CI
 enforces that policy with a source scan and runs ordinary Verus verification.
@@ -24,7 +26,8 @@ Enabled executable widths:
 
 The `d128` macro invocation remains disabled because its bitvector obligations
 exceed the current solver capacity. Do not describe `u128` as an enabled or
-verified executable instance.
+verified executable instance. The CRT implementation uses verified `u128`
+intermediates for the four enabled widths; this does not enable `d128`.
 
 The separate Rust mirror suite can be run with:
 
@@ -36,6 +39,17 @@ Those tests mirror the Verus definitions and provide randomized/exhaustive
 finite evidence. They are not an independent proof that a separate executable
 implementation corresponds to the verified definitions.
 
+The CRT suite calls the actual executable helpers for each enabled width:
+
+```text
+cargo test -p semi-persistent-abstract-domains --test crt
+```
+
+It covers normalized inputs, compatible and incompatible constraints, and LCM
+overflow with a representable solution (including `MAX`) or no representable
+solution.
+The transplanted tree has not yet been retested.
+
 ## Layer status
 
 | Layer | Contents | Status |
@@ -44,6 +58,7 @@ implementation corresponds to the verified definitions.
 | L2 | Tnum, Anum, Unum, and division theory | proved |
 | L3 | chopped bounded-width domains | every stated contract verifies; containment covers the explicit operation inventory in `design.md`, not every defined operation |
 | L4 | `ExecTnum`, `ExecAnum`, `ExecUnum`, `Interval` at four enabled widths | every method verifies its stated contract; containment scope is listed below |
+| L4 | Shared GCD/CRT helpers | transplanted from #112; exact CRT and overflow contracts previously verified at all four enabled widths; revalidation pending |
 | L4 | `Congruence<W>` | generic unsigned semantics, canonical normalization, nonemptiness and canonicality proved; full `Domain` implementation not yet available |
 
 All enabled L4 results are proved well formed where their contracts say so.
@@ -67,6 +82,32 @@ and Unum conversions/arithmetic helpers.
 Their implementations and finite mirror tests are evidence, but not universal
 containment theorems. Adding those postconditions and proofs is the remaining
 L4 soundness work.
+
+### Shared arithmetic helpers
+
+The helpers remain inside `abstract_domain!` in `domains.rs` for use by
+Congruence and future Strided Interval operations.
+
+- `gcd` proves `is_gcd`, including `gcd(0, 0) = 0`, using the Euclidean-step lemma.
+- `extended_gcd` proves the GCD, Bézout identity, and coefficient bounds.
+- `crt_compatible` checks residue compatibility modulo the GCD. Supporting
+  lemmas prove that common solutions imply compatibility and incompatible
+  constraints have no common integer solution.
+- `checked_lcm` returns the exact LCM when it fits in `$uint`; `None` proves
+  that the exact LCM exceeds the width's maximum. Both inputs must be positive.
+- `crt_merge` accepts positive moduli and normalizes the input residues.
+  Its result distinguishes the following cases:
+
+| Result | Verified guarantee |
+| --- | --- |
+| `Merged { modulus, residue }` | The modulus is the exact LCM, the residue is canonical, and the class represents exactly all common integer solutions. |
+| `Incompatible` | There is no common integer solution. |
+| `ModulusOverflow { wide_residue }` | The inputs are compatible and the exact LCM exceeds `MAX`. The canonical common residue is computed in `u128`; a representable value is a common solution exactly when it equals `wide_residue`. |
+
+In the overflow case, `wide_residue <= MAX` identifies the unique representable
+solution; otherwise the representable intersection is empty. The executable
+arithmetic is verified to avoid overflow. These helpers handle regular modular
+constraints only; Singleton, Bottom, and interval bounds belong to callers.
 
 ### Congruence
 
@@ -128,7 +169,7 @@ representation of all 16,640 distinct sets. Other cases cover constant/top,
 singleton collapse, second-member boundaries, all four word widths and width
 aliases. The oracle also checks the canonical query helpers against the sets.
 
-`cargo test` passes the integration tests (0 failures; an unrelated doctest ignored).
+`cargo test` passes the integration tests.
 Verification uses the repository-pinned Verus
 `0.2026.09.20.aef82ed`, matching the pinned `vstd` dependency.
 
