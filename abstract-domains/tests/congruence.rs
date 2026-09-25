@@ -73,3 +73,83 @@ fn refinement_matches_finite_u8_sets() {
         }
     }
 }
+
+macro_rules! meet_cases {
+    ($name:ident, $domain:ident, $uint:ty) => {
+        #[test]
+        fn $name() {
+            use semi_persistent_abstract_domains::domains::$domain::Congruence;
+            let a = Congruence { modulus: 6, residue: 1 };
+            let b = Congruence { modulus: 4, residue: 3 };
+            let merged = a.meet(&b).expect("compatible constraints");
+            assert_eq!((merged.modulus, merged.residue), (12, 7));
+            assert!(a.meet(&Congruence { modulus: 4, residue: 2 }).is_none());
+            for (left, right) in [(a, Congruence::top()), (Congruence::top(), a), (a, a)] {
+                let result = left.meet(&right).unwrap();
+                assert_eq!((result.modulus, result.residue), (a.modulus, a.residue));
+            }
+            for x in [0, 7] {
+                let singleton = Congruence::constant(x);
+                for result in [a.meet(&singleton), singleton.meet(&a)] {
+                    if x == 7 {
+                        let r = result.unwrap();
+                        assert_eq!((r.modulus, r.residue), (0, x));
+                    } else {
+                        assert!(result.is_none());
+                    }
+                }
+                assert!(singleton.meet(&singleton).unwrap().contains(x));
+                assert!(singleton.meet(&Congruence::constant(x + 1)).is_none());
+            }
+            let max = <$uint>::MAX;
+            for x in [0, 1, max] {
+                let left = Congruence { modulus: max, residue: x % max };
+                let right = Congruence { modulus: max - 1, residue: x % (max - 1) };
+                for result in [left.meet(&right), right.meet(&left)] {
+                    let r = result.expect("unique representable solution");
+                    assert_eq!((r.modulus, r.residue), (0, x));
+                }
+            }
+            let left = Congruence { modulus: max, residue: max - 1 };
+            let right = Congruence { modulus: max - 1, residue: max - 2 };
+            assert!(left.meet(&right).is_none());
+            assert!(right.meet(&left).is_none());
+        }
+    };
+}
+
+meet_cases!(meet_u8, d8, u8);
+meet_cases!(meet_u16, d16, u16);
+meet_cases!(meet_u32, d32, u32);
+meet_cases!(meet_u64, d64, u64);
+
+#[test]
+fn meet_matches_finite_u8_sets() {
+    use semi_persistent_abstract_domains::domains::d8::Congruence;
+    let mut classes = Vec::new();
+    for m in [0, 1, 2, 3, 4, 127, 128, 129, 200, 254, 255] {
+        for r in [0, 1, 2, 100, 127, 128, 200, 254, 255] {
+            let c = Congruence { modulus: m, residue: r }.normalize();
+            let values: Vec<bool> = (0..=u8::MAX).map(|x| {
+                if m == 0 { x == r } else { x % m == r % m }
+            }).collect();
+            classes.push((c, values));
+        }
+    }
+    for (a, av) in &classes {
+        for (b, bv) in &classes {
+            let result = a.meet(b);
+            if let Some(r) = result {
+                assert!(r.modulus == 0 || r.residue < r.modulus);
+            }
+            let mut nonempty = false;
+            for x in 0..=u8::MAX {
+                let expected = av[x as usize] && bv[x as usize];
+                nonempty |= expected;
+                assert_eq!(result.as_ref().is_some_and(|r| r.contains(x)), expected,
+                    "({}, {}) meet ({}, {}) at {x}", a.modulus, a.residue, b.modulus, b.residue);
+            }
+            assert_eq!(result.is_some(), nonempty);
+        }
+    }
+}

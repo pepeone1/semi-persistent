@@ -3003,6 +3003,72 @@ macro_rules! abstract_domain {
                     }
                     divides
                 }
+                
+                /// Exact intersection; None marks emptiness pending shared Bottom integration.
+                pub fn meet(&self, other: &Congruence) -> (result: Option<Congruence>)
+                    requires self.wf(), other.wf(),
+                    ensures match result {
+                        Some(r) => r.wf() && (forall|x: $uint| #[trigger] r.has(x)
+                            <==> self.has(x) && other.has(x)),
+                        None => forall|x: $uint| #[trigger] self.has(x) ==> !other.has(x),
+                    },
+                {
+                    if self.modulus == 1 {
+                        return Some(*other);
+                    }
+                    if other.modulus == 1 {
+                        return Some(*self);
+                    }
+                    if self.modulus == 0 {
+                        return if other.contains(self.residue) { Some(*self) } else { None };
+                    }
+                    if other.modulus == 0 {
+                        return if self.contains(other.residue) { Some(*other) } else { None };
+                    }
+                    proof {
+                        vstd::arithmetic::div_mod::lemma_small_mod(
+                            self.residue as nat, self.modulus as nat);
+                        vstd::arithmetic::div_mod::lemma_small_mod(
+                            other.residue as nat, other.modulus as nat);
+                        assert forall|x: $uint| #[trigger] self.has(x) && #[trigger] other.has(x)
+                            <==> is_common_congruence_solution(x as int,
+                                self.modulus as nat, self.residue as nat,
+                                other.modulus as nat, other.residue as nat) by {}
+                    }
+                    match crt_merge(self.modulus, self.residue, other.modulus, other.residue) {
+                        CrtMergeResult::Merged { modulus, residue } => {
+                            let r = Congruence { modulus, residue };
+                            proof {
+                                assert forall|x: $uint| #[trigger] r.has(x)
+                                    <==> self.has(x) && other.has(x) by {
+                                    assert(is_common_congruence_solution(x as int,
+                                        self.modulus as nat, self.residue as nat,
+                                        other.modulus as nat, other.residue as nat)
+                                        <==> (x as int) % (modulus as int) == residue as int);
+                                }
+                            }
+                            Some(r)
+                        },
+                        CrtMergeResult::Incompatible => None,
+                        CrtMergeResult::ModulusOverflow { wide_residue } => {
+                            if wide_residue <= $max_val as u128 {
+                                let r = Congruence::constant(wide_residue as $uint);
+                                proof {
+                                    assert forall|x: $uint| #[trigger] r.has(x)
+                                        <==> self.has(x) && other.has(x) by {
+                                        assert(is_common_congruence_solution(x as int,
+                                            self.modulus as nat, self.residue as nat,
+                                            other.modulus as nat, other.residue as nat)
+                                            <==> x as u128 == wide_residue);
+                                    }
+                                }
+                                Some(r)
+                            } else {
+                                None
+                            }
+                        },
+                    }
+                }
 
                 /// Construct the singleton containing x.
                 pub fn constant(x: $uint) -> (r: Congruence)
