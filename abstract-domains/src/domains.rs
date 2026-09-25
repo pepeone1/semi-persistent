@@ -3017,6 +3017,77 @@ macro_rules! abstract_domain {
                     }
                 }
 
+                /// Wrapping preserves residues modulo divisors of the machine period.
+                pub proof fn wrapping_add_mod(a: $uint, b: $uint, d: nat)
+                    requires d > 0, (($max_val as nat) + 1) % d == 0,
+                    ensures (a.wrapping_add(b) as nat) % d
+                        == ((a as nat) + (b as nat)) % d,
+                {
+                    let period = ($max_val as int) + 1;
+                    let sum = (a as int) + (b as int);
+                    let wrapped = a.wrapping_add(b) as int;
+                    assert((a.wrapping_add(b) as u128) ==
+                        if (a as u128) + (b as u128) <= $max_val as u128 {
+                            (a as u128) + (b as u128)
+                        } else {
+                            (a as u128) + (b as u128) - (($max_val as u128) + 1)
+                        }) by (bit_vector);
+                    if sum >= period {
+                        vstd::arithmetic::div_mod::lemma_fundamental_div_mod(period, d as int);
+                        congruence_shift(sum, wrapped, d as int, period / (d as int));
+                    }
+                }
+
+                /// Cover all machine-width wrapping sums of the operands.
+                pub fn add(&self, other: &Congruence) -> (r: Congruence)
+                    requires self.wf(), other.wf(),
+                    ensures r.wf(),
+                        forall|x: $uint, y: $uint| #![auto]
+                            self.has(x) && other.has(y) ==> r.has(x.wrapping_add(y)),
+                {
+                    let s1 = if self.modulus > $max_val - self.residue { 0 } else { self.modulus };
+                    let s2 = if other.modulus > $max_val - other.residue { 0 } else { other.modulus };
+                    let stride_gcd = gcd(s1, s2);
+                    let sum = self.residue.wrapping_add(other.residue);
+                    if stride_gcd == 0 {
+                        proof {
+                            assert(s1 == 0 && s2 == 0);
+                            assert forall|x: $uint, y: $uint| #![auto]
+                                self.has(x) && other.has(y)
+                                implies x.wrapping_add(y) == sum by {
+                                self.member_decomposition(x);
+                                other.member_decomposition(y);
+                            }
+                        }
+                        return Congruence::constant(sum);
+                    }
+                    // gcd(strides, 2^W) accounts for wraparound without storing 2^W in $uint.
+                    let period = ($max_val as u128) + 1;
+                    let remainder = (period % (stride_gcd as u128)) as $uint;
+                    let modulus = gcd(stride_gcd, remainder);
+                    proof {
+                        assert(modulus > 0);
+                        normalize_preserves_divisor(s1 as nat, stride_gcd as nat, modulus as nat);
+                        normalize_preserves_divisor(s2 as nat, stride_gcd as nat, modulus as nat);
+                        normalize_preserves_divisor(period as nat, stride_gcd as nat, modulus as nat);
+                        assert((period as nat) % (modulus as nat) == 0);
+                    }
+                    let r = Congruence { modulus, residue: sum % modulus };
+                    proof {
+                        Self::wrapping_add_mod(self.residue, other.residue, modulus as nat);
+                        vstd::arithmetic::div_mod::lemma_add_mod_noop(
+                            self.residue as int, other.residue as int, modulus as int);
+                        assert forall|x: $uint, y: $uint| #![auto]
+                            self.has(x) && other.has(y) implies r.has(x.wrapping_add(y)) by {
+                            self.member_mod_divisor(x, modulus as nat);
+                            other.member_mod_divisor(y, modulus as nat);
+                            Self::wrapping_add_mod(x, y, modulus as nat);
+                            vstd::arithmetic::div_mod::lemma_add_mod_noop(x as int, y as int, modulus as int);
+                        }
+                    }
+                    r
+                }
+
                 /// Cover both operands using the GCD of effective strides and residue distance.
                 pub fn join(&self, other: &Congruence) -> (r: Congruence)
                     requires self.wf(), other.wf(),

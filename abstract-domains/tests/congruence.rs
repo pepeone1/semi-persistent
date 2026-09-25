@@ -233,3 +233,68 @@ fn join_covers_finite_u8_sets() {
         }
     }
 }
+
+macro_rules! add_cases {
+    ($name:ident, $domain:ident, $uint:ty) => {
+        #[test]
+        fn $name() {
+            use semi_persistent_abstract_domains::domains::$domain::Congruence;
+            let max = <$uint>::MAX;
+            for (x, y) in [(0, 0), (1, 2), (max, 1), (max, max)] {
+                let r = Congruence::constant(x).add(&Congruence::constant(y));
+                assert_eq!((r.modulus, r.residue), (0, x.wrapping_add(y)));
+            }
+            let finite_one = Congruence { modulus: max, residue: 1 };
+            let r = finite_one.add(&Congruence::constant(max));
+            assert_eq!((r.modulus, r.residue), (0, 0));
+            let odd = Congruence { modulus: 2, residue: 1 };
+            let r = odd.add(&odd);
+            assert_eq!((r.modulus, r.residue), (2, 0));
+            let four = Congruence { modulus: 4, residue: 3 };
+            let r = four.add(&Congruence::constant(2));
+            assert_eq!((r.modulus, r.residue), (4, 1));
+            for (a, b) in [(odd, Congruence::top()), (Congruence::top(), odd)] {
+                let r = a.add(&b);
+                assert_eq!((r.modulus, r.residue), (1, 0));
+            }
+            let multiples_of_three = Congruence { modulus: 3, residue: 0 };
+            let r = multiples_of_three.add(&multiples_of_three);
+            assert_eq!((r.modulus, r.residue), (1, 0));
+            assert!(r.contains(max.wrapping_add(3)));
+        }
+    };
+}
+
+add_cases!(add_u8, d8, u8);
+add_cases!(add_u16, d16, u16);
+add_cases!(add_u32, d32, u32);
+add_cases!(add_u64, d64, u64);
+
+#[test]
+fn addition_covers_finite_u8_sums() {
+    use semi_persistent_abstract_domains::domains::d8::Congruence;
+    let mut classes = Vec::new();
+    for m in [0, 1, 2, 3, 4, 127, 128, 129, 200, 254, 255] {
+        for r in [0, 1, 2, 100, 127, 128, 200, 254, 255] {
+            let c = Congruence { modulus: m, residue: r }.normalize();
+            let values: Vec<u8> = (0..=u8::MAX).filter(|x| {
+                if m == 0 { *x == r } else { x % m == r % m }
+            }).collect();
+            classes.push((c, values));
+        }
+    }
+    for (a, av) in &classes {
+        for (b, bv) in &classes {
+            let result = a.add(b);
+            assert!(result.modulus == 0 || result.residue < result.modulus);
+            let reverse = b.add(a);
+            assert_eq!((result.modulus, result.residue), (reverse.modulus, reverse.residue));
+            for &x in av {
+                for &y in bv {
+                    assert!(result.contains(x.wrapping_add(y)),
+                        "({}, {}) + ({}, {}) misses {x} + {y}", a.modulus, a.residue, b.modulus, b.residue);
+                }
+            }
+        }
+    }
+}
