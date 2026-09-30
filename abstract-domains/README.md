@@ -6,11 +6,12 @@ written in [Verus](https://github.com/verus-lang/verus) (verified Rust).
 ## What this is
 
 This crate provides **tristate numbers (Tnums)**, **additive tristate numbers (Anums)**,
-**intervals**, **Unums (horizontally composable additive tristate numbers)**, and their
+**intervals**, **congruences**, **Unums (horizontally composable additive tristate
+numbers)**, and their
 **reduced product TAIU** -- abstract domains for reasoning about bitvector arithmetic
 with bitwise uncertainty.
 
-The ordinary verification run reports **1128 verified conditions and 0
+The ordinary verification run reports **1237 verified conditions and 0
 errors**. A CI source gate rejects executable `admit()` and `assume()` calls in
 this crate. The pinned `vstd` dependency contains admitted specifications and
 is part of the trust boundary, as are the `IBig` wrapper's `external_body`
@@ -76,6 +77,10 @@ bitvector obligations exceed current solver capacity):
 - **EUn**: Executable Unum. Proved-sound addition via the carry-out formula,
   widening to top when represented bounds or result ranges wrap.
 - **Interval**: `[lo, hi]` bounds tracking.
+- **Congruence<W>** (`congruence.rs`): generic canonical finite-word classes,
+  exact refinement/meet, least-upper-bound join, join-based widen, and
+  `Arith<Unsigned<W>>` add/sub/neg. No-wrap addition retains the stride GCD;
+  wrapping cases use the shared machine-modulus GCD. Empty meet is `BotOr::Bot`.
 - **ReducedProduct (TAIU)**: Tnum x Anum x Interval x Unum.
 
 The **reduced product** propagates information across domains:
@@ -90,7 +95,9 @@ Every executable method verifies its stated contract. Universal containment
 theorems currently cover `ExecTnum` bitwise/add/join/meet,
 `ExecAnum` add/division by constant, `ExecUnum` top/add/from-interval/multiply,
 `Interval` add/meet/join/division by constant, and `ReducedProduct`
-reduce/add. Other Layer 4 methods currently prove well-formedness only; see
+reduce/add. Generic `Congruence<W>` additionally proves exact refinement/meet,
+least-upper-bound join, and widen/add/sub/neg containment. Other Layer 4 methods
+currently prove well-formedness only; see
 [the proof-status inventory](doc/proof-status.md).
 
 ### Shared domain interface (lattice.rs, word.rs, semantics.rs, transfer.rs)
@@ -150,12 +157,13 @@ cargo run --features bin
 
 ## Verification status
 
-- 1128 Verus conditions, 0 errors
+- 1237 Verus conditions, 0 errors
 - no project-local `admit()`/`assume()` calls (CI source gate)
 - pinned `vstd` admitted specifications remain in the trust boundary
 - `IBig` (`num-bigint` wrapper): 7 `external_body` functions and 1 axiom, listed in the
   [trust ledger](doc/domain-traits.md#7-trust); machine-word domains do not use it
-- 32 Rust mirror tests, 3 reference-domain tests, and 4 real Congruence tests, all passing
+- 74 passing integration tests: 32 Rust mirror, 3 reference-domain, 8 shared
+  arithmetic/CRT, and 31 real Congruence tests (1 unrelated doctest ignored)
 - 4 enabled bit-widths: u8, u16, u32, u64
 
 ## Design documents

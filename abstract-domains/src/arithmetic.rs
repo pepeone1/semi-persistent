@@ -3,8 +3,8 @@
 //! Shared GCD, Bézout and finite-word CRT helpers. No domain operations.
 #![allow(unused_imports, unused_variables)]
 use crate::word::Word;
-use vstd::prelude::*;
 use vstd::arithmetic::div_mod::*;
+use vstd::prelude::*;
 
 verus! {
 

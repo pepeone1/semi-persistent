@@ -147,15 +147,29 @@ lift. It implements:
 `tests/domain_traits.rs` checks both domains at runtime against brute-force
 concretization.
 
-**`Congruence<W>`** (`congruence.rs`, PR #106) currently supplies the semantic
-core only: private canonical fields, `wf`, unsigned `gamma`/`has`, executable
-membership, normalized constructors, and inherent `lemma_nonempty` and
-`lemma_canonical` with the same obligations as `Domain`. A progression must
-have at least two representable members; otherwise it normalizes to a
-singleton. `tests/congruence.rs` exhaustively checks the real u8 implementation.
-Its full `impl Domain` is deferred to #114 because this trait requires
-`leq`, `join`, `meet`, and `widen`; no placeholder lattice operations or
-arithmetic transfers are supplied by the semantic core.
+**`Congruence<W>`** (`congruence.rs`, semantic core #106, helpers #112,
+integration #114) has private canonical fields. A progression must have at
+least two representable members; otherwise it normalizes to a singleton.
+It implements:
+
+- `Domain<C = W>`, reusing proved nonemptiness and canonicality;
+- exact `leq` (also available as inherent `refines`);
+- exact `meet -> BotOr<Self>`, using shared CRT `Class`/`Singleton`/`Empty`;
+- least-upper-bound `join`, with a stronger semantic contract than the shared
+  trait requires: every common upper bound also contains the result;
+- `widen` as join: the fixed-width carrier has finitely many canonical classes,
+  so ascending chains stabilize. The shared trait requires only soundness;
+- `Arith<Unsigned<W>>`: sound add/sub/neg. `max_member` proves the greatest
+  concrete member. Addition keeps `gcd(s1, s2)` when the two maxima sum to at
+  most `MAX`, otherwise uses `gcd(gcd(s1, s2), 2^N)`. Constants stay exact.
+  Subtraction composes sound negation and addition; no optimality is claimed
+  for general arithmetic results.
+
+All result construction uses canonical constructors. No `Word` assumptions
+or shared trait requirements were strengthened. Signed arithmetic instances,
+multiplication, and division remain deferred. `tests/congruence.rs` exercises
+the real generic implementation, including explicit trait calls, all canonical
+u8 classes for unary/boundary checks, and concrete-set lattice/transfer oracles.
 
 ## 7. Trust
 

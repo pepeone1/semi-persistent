@@ -1,7 +1,7 @@
 # Semi-Persistent Abstract Domains
 
 A proved abstract domains library for bitvector arithmetic. The ordinary Verus
-run has 1128 verified conditions and 0 errors, and a CI source gate rejects
+run has 1237 verified conditions and 0 errors, and a CI source gate rejects
 project-local `admit()`/`assume()` calls. The pinned `vstd` dependency remains
 inside the trust boundary. A separate 32-test Rust mirror suite supplies finite
 randomized/exhaustive evidence.
@@ -342,8 +342,20 @@ currently proved for:
 - `ExecTnum::{bw_or,bw_and,bw_xor,add,join,meet}`;
 - `ExecAnum::{add,div_const}`;
 - `ExecUnum::{top,add,from_interval,mul}`;
-- `Interval::{add,meet,join,div_const}`; and
-- `ReducedProduct::{reduce,add}`.
+- `Interval::{add,meet,join,div_const}`;
+- `ReducedProduct::{reduce,add}`;
+- generic `Congruence<W>` exact refinement/meet, least-upper-bound join,
+  join-based widen, and unsigned add/sub/neg.
+
+Congruence uses private canonical finite-word classes and external `BotOr` for
+empty intersections. Its meet delegates positive-modulus inputs to the shared
+CRT helper. The first two members characterize stride divisibility, which
+proves the GCD join is below every common upper bound. Addition uses proved
+maximum members to choose `gcd(s1, s2)` when every sum fits, and includes the
+machine modulus when wrapping is possible. Negation uses the shared wrapping
+congruence lemma; subtraction composes negation and addition. These transfers
+prove containment, not general exactness. Signed transfer instances,
+multiplication, and division are deferred.
 
 Other executable operations currently prove well-formedness only. L2/L3
 soundness and finite mirror tests do not by themselves establish the missing
@@ -372,6 +384,7 @@ regenerate them. The source contains no executable `admit()` or `assume()`.
 | Division | Tnum constant and general containment proved |
 | Anum division | Positive constant-divisor containment proved |
 | Unum domain | Sound unbounded/bounded add and mul; no general exactness theorem |
+| Congruence | Generic `Domain` and `Arith<Unsigned<W>>`; exact meet/refinement and LUB join |
 | Reduced product | 4-domain (Tnum×Anum×Interval×Unum) |
 | Multi-width | u8, u16, u32, u64 (`u128` disabled) |
 | Rust mirror tests | See `proof-status.md` for the regenerated count |
