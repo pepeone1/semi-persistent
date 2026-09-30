@@ -2,6 +2,9 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Exhaustive oracle for the real executable Congruence<u8>.
 use semi_persistent_abstract_domains::congruence::Congruence;
+use semi_persistent_abstract_domains::lattice::Domain;
+use semi_persistent_abstract_domains::semantics::Unsigned;
+use semi_persistent_abstract_domains::transfer::Arith;
 use std::collections::HashMap;
 
 type C = Congruence<u8>;
@@ -471,6 +474,224 @@ fn addition_covers_finite_u8_sums() {
                         a.parts().1,
                         b.parts().0,
                         b.parts().1
+                    );
+                }
+            }
+        }
+    }
+}
+
+macro_rules! trait_cases {
+    ($name:ident, $word:ty) => {
+        #[test]
+        fn $name() {
+            type C = Congruence<$word>;
+            let max = <$word>::MAX;
+            let stride = max / 2 + 2; // odd, with exactly two represented members
+            let a = C::new(stride, 0);
+            let one = C::constant(1);
+            let top = <C as Domain>::top();
+            assert!(Domain::leq(&a, &top));
+            assert!(!Domain::leq(&top, &a));
+            assert_eq!(Domain::dup(&a).parts(), a.parts());
+            assert_eq!(Domain::join(&a, &a).parts(), a.parts());
+            assert_eq!(Domain::widen(&a, &one).parts(), a.join(&one).parts());
+            assert!(matches!(Domain::meet(&a, &one), BotOr::Bot));
+            assert_eq!(meet_value(Domain::meet(&a, &top)).parts(), a.parts());
+
+            // Keeping the odd stride is strictly more precise than gcd(stride, 2^N).
+            let precise = <C as Arith<Unsigned<$word>>>::add(&a, &one);
+            assert_eq!(precise.parts(), (stride, 1));
+            let edge = C::constant(max - stride);
+            assert_eq!(
+                <C as Arith<Unsigned<$word>>>::add(&a, &edge).parts(),
+                (stride, max - stride)
+            );
+            let wraps = C::constant(max - stride + 1);
+            assert_eq!(
+                <C as Arith<Unsigned<$word>>>::add(&a, &wraps).parts(),
+                (1, 0)
+            );
+            let odd = C::new(2, 1);
+            assert_eq!(<C as Arith<Unsigned<$word>>>::neg(&odd).parts(), (2, 1));
+            assert_eq!(
+                <C as Arith<Unsigned<$word>>>::sub(&odd, &odd).parts(),
+                (2, 0)
+            );
+            for x in [0, 1, max / 2, max - 1, max] {
+                let x_class = C::constant(x);
+                assert_eq!(
+                    <C as Arith<Unsigned<$word>>>::neg(&x_class).parts(),
+                    (0, x.wrapping_neg())
+                );
+                for y in [0, 1, max] {
+                    assert_eq!(
+                        <C as Arith<Unsigned<$word>>>::sub(&x_class, &C::constant(y)).parts(),
+                        (0, x.wrapping_sub(y))
+                    );
+                }
+            }
+            let bottom: BotOr<C> = BotOr::Bot;
+            let value = BotOr::Val(a);
+            assert!(bottom.leq(&value));
+            assert!(!value.leq(&bottom));
+            assert!(value.meet(&bottom).is_bot());
+            assert_eq!(meet_value(bottom.join(&value)).parts(), (stride, 0));
+            assert_eq!(meet_value(bottom.widen(&value)).parts(), (stride, 0));
+        }
+    };
+}
+
+trait_cases!(traits_u8, u8);
+trait_cases!(traits_u16, u16);
+trait_cases!(traits_u32, u32);
+trait_cases!(traits_u64, u64);
+
+// Enumerate each canonical nonempty set once, without computing any GCD/CRT.
+fn canonical_classes() -> Vec<(C, [u64; 4])> {
+    let mut classes = Vec::new();
+    for r in 0..=u8::MAX {
+        classes.push((C::constant(r), oracle(0, r)));
+    }
+    for m in 1..=u8::MAX {
+        for r in 0..m.min((256u16 - u16::from(m)) as u8) {
+            classes.push((C::new(m, r), oracle(m, r)));
+        }
+    }
+    assert_eq!(classes.len(), 16_640);
+    classes
+}
+
+fn bit_subset(a: &[u64; 4], b: &[u64; 4]) -> bool {
+    (0..4).all(|i| a[i] & !b[i] == 0)
+}
+
+fn members(bits: &[u64; 4]) -> impl Iterator<Item = u8> + '_ {
+    (0..=u8::MAX).filter(|x| bits[usize::from(x / 64)] & (1u64 << (x % 64)) != 0)
+}
+
+#[test]
+fn every_canonical_u8_class_maximum_negation_and_addition_boundaries() {
+    for (a, bits) in canonical_classes() {
+        let values: Vec<_> = members(&bits).collect();
+        let last = *values.last().unwrap();
+        assert_eq!(a.max_member(), last);
+        let negative = <C as Arith<Unsigned<u8>>>::neg(&a);
+        check_wf(&negative);
+        for &x in &values {
+            assert!(
+                negative.contains(x.wrapping_neg()),
+                "neg {:?}: {x}",
+                a.parts()
+            );
+        }
+        // Every class: zero shift, largest non-wrapping shift, first wrapping
+        // shift (where it exists), and MAX. Check every represented operand.
+        for y in [0, 255 - last, (255 - last).saturating_add(1), 255] {
+            let b = C::constant(y);
+            let sum = <C as Arith<Unsigned<u8>>>::add(&a, &b);
+            check_wf(&sum);
+            if y <= 255 - last {
+                let (m, r) = a.parts();
+                let expected = C::new(m, r + y);
+                assert_eq!(
+                    sum.parts(),
+                    expected.parts(),
+                    "no-wrap {:?} + {y}",
+                    a.parts()
+                );
+            }
+            for &x in &values {
+                assert!(
+                    sum.contains(x.wrapping_add(y)),
+                    "{:?} + {y}: {x}",
+                    a.parts()
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn exhaustive_u8_constant_arithmetic() {
+    for x in 0..=u8::MAX {
+        for y in 0..=u8::MAX {
+            let a = C::constant(x);
+            let b = C::constant(y);
+            assert_eq!(
+                <C as Arith<Unsigned<u8>>>::add(&a, &b).parts(),
+                (0, x.wrapping_add(y))
+            );
+            assert_eq!(
+                <C as Arith<Unsigned<u8>>>::sub(&a, &b).parts(),
+                (0, x.wrapping_sub(y))
+            );
+        }
+    }
+}
+
+#[test]
+fn trait_operations_against_finite_sets_and_all_canonical_upper_bounds() {
+    let all = canonical_classes();
+    let mut inputs = Vec::new();
+    for m in [0, 1, 2, 3, 4, 127, 128, 129, 200, 254, 255] {
+        for r in [0, 1, 2, 100, 127, 128, 200, 254, 255] {
+            inputs.push((C::new(m, r), oracle(m, r)));
+        }
+    }
+    // Precompute containing sets by concrete bitset inclusion, independently
+    // of refines/join. Intersect these lists to check *every* possible upper
+    // bound of each input pair without a cubic membership scan.
+    let uppers: Vec<Vec<usize>> = inputs
+        .iter()
+        .map(|(_, bits)| {
+            all.iter()
+                .enumerate()
+                .filter_map(|(i, (_, upper))| bit_subset(bits, upper).then_some(i))
+                .collect()
+        })
+        .collect();
+    for (i, (a, av)) in inputs.iter().enumerate() {
+        let xs: Vec<_> = members(av).collect();
+        for (b, bv) in &inputs {
+            assert_eq!(Domain::leq(a, b), bit_subset(av, bv));
+            let join = Domain::join(a, b);
+            let joined = oracle(join.parts().0, join.parts().1);
+            check_wf(&join);
+            assert!(bit_subset(av, &joined) && bit_subset(bv, &joined));
+            for &k in &uppers[i] {
+                if bit_subset(bv, &all[k].1) {
+                    assert!(
+                        bit_subset(&joined, &all[k].1),
+                        "LUB {:?}, {:?}",
+                        a.parts(),
+                        b.parts()
+                    );
+                }
+            }
+            assert_eq!(Domain::widen(a, b).parts(), join.parts());
+            let meet = Domain::meet(a, b);
+            let intersection = std::array::from_fn(|k| av[k] & bv[k]);
+            match meet {
+                BotOr::Bot => assert_eq!(intersection, [0; 4]),
+                BotOr::Val(c) => {
+                    check_wf(&c);
+                    assert_eq!(oracle(c.parts().0, c.parts().1), intersection);
+                }
+            }
+            let sum = <C as Arith<Unsigned<u8>>>::add(a, b);
+            let difference = <C as Arith<Unsigned<u8>>>::sub(a, b);
+            check_wf(&sum);
+            check_wf(&difference);
+            let ys: Vec<_> = members(bv).collect();
+            for &x in &xs {
+                for &y in &ys {
+                    assert!(sum.contains(x.wrapping_add(y)));
+                    assert!(
+                        difference.contains(x.wrapping_sub(y)),
+                        "{:?} - {:?}: {x} - {y}",
+                        a.parts(),
+                        b.parts()
                     );
                 }
             }
