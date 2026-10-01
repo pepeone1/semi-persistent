@@ -11,7 +11,7 @@ numbers)**, and their
 **reduced product TAIU** -- abstract domains for reasoning about bitvector arithmetic
 with bitwise uncertainty.
 
-The ordinary verification run reports **1237 verified conditions and 0
+The ordinary verification run reports **1317 verified conditions and 0
 errors**. A CI source gate rejects executable `admit()` and `assume()` calls in
 this crate. The pinned `vstd` dependency contains admitted specifications and
 is part of the trust boundary, as are the `IBig` wrapper's `external_body`
@@ -107,7 +107,8 @@ Every domain implements one interface, specified in
 
 - domains are bottomless, and `BotOr<D>` is the external bottom (as in Verasco);
 - representations are canonical, and each domain proves `lemma_canonical`;
-- machine domains are generic over `W: Word` (u8..u64);
+- generic machine domains use `W: Word` (u8..u128); Congruence uses
+  `W: Word64` (u8..u64) for its existing widened CRT engine;
 - transfer functions are indexed by a `Semantics`: `Unsigned<W>`, `Signed<W>`,
   `Euclid` or `Trunc`;
 - division reports a `DivZero` flag.
@@ -157,14 +158,15 @@ cargo run --features bin
 
 ## Verification status
 
-- 1237 Verus conditions, 0 errors
+- 1317 Verus conditions, 0 errors
 - no project-local `admit()`/`assume()` calls (CI source gate)
 - pinned `vstd` admitted specifications remain in the trust boundary
 - `IBig` (`num-bigint` wrapper): 7 `external_body` functions and 1 axiom, listed in the
   [trust ledger](doc/domain-traits.md#7-trust); machine-word domains do not use it
-- 74 passing integration tests: 32 Rust mirror, 3 reference-domain, 8 shared
-  arithmetic/CRT, and 31 real Congruence tests (1 unrelated doctest ignored)
-- 4 enabled bit-widths: u8, u16, u32, u64
+- 78 passing integration tests: 32 Rust mirror, 6 reference-domain, 8 shared
+  arithmetic/CRT, and 32 real Congruence tests (1 unrelated doctest ignored)
+- macro-generated domains and Congruence: u8, u16, u32, u64;
+  generic `Word` and `Interval<W>` additionally support u128
 
 ## Design documents
 

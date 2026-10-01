@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Shared GCD, Bézout and finite-word CRT helpers. No domain operations.
 #![allow(unused_imports, unused_variables)]
-use crate::word::Word;
+use crate::word::{Word, Word64};
 use vstd::arithmetic::div_mod::*;
 use vstd::prelude::*;
 
@@ -1293,7 +1293,7 @@ pub struct ExtendedGcd<W> {
     pub y: i128,
 }
 
-pub fn extended_gcd<W: Word>(a: W, b: W) -> (r: ExtendedGcd<W>)
+pub fn extended_gcd<W: Word64>(a: W, b: W) -> (r: ExtendedGcd<W>)
     ensures r.gcd.view() == gcd_spec(a.view(), b.view()),
         is_extended_gcd(r.gcd.view(), r.x as int, r.y as int, a.view(), b.view()),
         b.view() == 0 ==> r.x == 1 && r.y == 0,
@@ -1361,7 +1361,7 @@ proof fn lemma_class_member(x: nat, m: nat, r: nat)
 
 /// Exact CRT over representable words. Moduli MUST be positive.
 /// Congruence's modulus-zero constants must be handled by callers first.
-pub fn crt_merge<W: Word>(m1: W, r1: W, m2: W, r2: W) -> (result: CrtMergeResult<W>)
+pub fn crt_merge<W: Word64>(m1: W, r1: W, m2: W, r2: W) -> (result: CrtMergeResult<W>)
     requires m1.view() > 0, m2.view() > 0,
     ensures result.wf(),
         forall|x: W| #[trigger] result.has(x) <==>
@@ -1415,7 +1415,7 @@ pub fn gcd_wide(a: u128, b: u128) -> (r: u128)
 
 /// The step that is preserved by reduction modulo the machine modulus.
 /// The result is wide because gcd(0, 2^64) = 2^64.
-pub fn gcd_machine_modulus<W: Word>(m: W) -> (r: u128)
+pub fn gcd_machine_modulus<W: Word64>(m: W) -> (r: u128)
     ensures r as nat == gcd_spec(m.view(), W::modulus()), r > 0,
         m.view() % (r as nat) == 0, W::modulus() % (r as nat) == 0,
 {
@@ -1445,7 +1445,7 @@ pub proof fn lemma_wrapping_congruence<W: Word>(m: nat, x: int)
 }
 
 /// Exact native-word product, widened before multiplication.
-pub fn mul_wide<W: Word>(a: W, b: W) -> (r: u128)
+pub fn mul_wide<W: Word64>(a: W, b: W) -> (r: u128)
     ensures r as nat == a.view() * b.view(),
 {
     let aw = a.to_u64() as u128;
@@ -1459,7 +1459,7 @@ pub fn mul_wide<W: Word>(a: W, b: W) -> (r: u128)
 
 /// Shared widened Granger modulus foundation. This computes only the modulus;
 /// it does not implement multiplication or wrapping of any abstract domain.
-pub fn granger_modulus<W: Word>(m1: W, r1: W, m2: W, r2: W) -> (r: u128)
+pub fn granger_modulus<W: Word64>(m1: W, r1: W, m2: W, r2: W) -> (r: u128)
     ensures r as nat == gcd_spec(gcd_spec(m1.view() * m2.view(), m1.view() * r2.view()), m2.view() * r1.view()),
 {
     let mm = mul_wide(m1, m2);

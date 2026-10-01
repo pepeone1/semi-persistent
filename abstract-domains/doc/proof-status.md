@@ -1,12 +1,14 @@
 # Abstract Domains Proof Status
 
-Last refreshed: 2026-09-30.
+Last refreshed: 2026-10-01.
 
 ## Current result
 
+Run from `abstract-domains/` with the repository-pinned Verus version:
+
 ```text
 cargo verus verify
-1242 verified, 0 errors
+1317 verified, 0 errors
 ```
 
 The project source contains no executable `admit()` or `assume()` calls. CI
@@ -16,7 +18,7 @@ The pinned `vstd` dependency contains admitted specifications; global
 dependency specifications, Verus, and the solver remain part of the trust
 boundary.
 
-Enabled executable widths:
+Enabled macro-generated (`domains.rs`) executable widths:
 
 - `d8` (`u8`)
 - `d16` (`u16`)
@@ -24,9 +26,10 @@ Enabled executable widths:
 - `d64` (`u64`)
 
 The `d128` macro invocation remains disabled because its bitvector obligations
-exceed the current solver capacity. Do not describe `u128` as an enabled or
-verified executable instance. The CRT implementation uses verified `u128`
-intermediates for the four enabled widths; this does not enable `d128`.
+exceed the current solver capacity. Separately, PR #117 enables `Word` and
+generic `Interval<W>` for u128. Congruence and its widened CRT engine retain
+their four supported widths through `Word64: Word`; their verified u128
+intermediates do not enable `Congruence<u128>` or `d128`.
 
 The separate Rust mirror suite contains 32 tests:
 
@@ -75,6 +78,7 @@ The current **universal containment** contracts are:
 | `ExecUnum` | `top`, `add`, `from_interval`, `mul` |
 | `Interval` | `add`, `meet`, `join`, `div_const` |
 | `ReducedProduct` | `reduce`, `add` |
+| generic `Interval<W>` | `Domain`, unsigned add/sub/neg/mul/div/rem (including u128); separate from the macro-generated `Interval` above |
 | `Congruence<W>` | exact `refines`/`leq`/`meet`, LUB `join`, `widen`, unsigned `add`/`sub`/`neg` |
 
 The `ExecUnum` proofs use native/spec bridge lemmas, the L3 `ChoppedUnum`
@@ -93,9 +97,11 @@ L4 soundness work.
 ### Shared arithmetic helpers
 
 `src/arithmetic.rs` owns the shared foundation; the width-independent `int`/
-`nat` proofs are no longer instantiated by `abstract_domain!`. `Word` supplies
+`nat` proofs are no longer instantiated by `abstract_domain!`. `Word64` supplies
 lossless `to_u64` and `from_u64` bridges (the latter requires an in-range
-input) and proves its modulus is at most 2^64. The generic APIs support u8/u16/u32/u64. A single
+input) and proves its modulus is at most 2^64. The widened APIs support
+u8/u16/u32/u64; ordinary `gcd` and the wrapping-congruence lemma retain the
+upstream `Word` bound, including u128. A single
 private u64/i128/u128 engine retains the verified extended-Euclidean and CRT
 calculations without repeating them for each width.
 
@@ -139,7 +145,7 @@ trusted items were introduced.
 
 ### Congruence
 
-`src/congruence.rs` implements the domain as `Congruence<W: Word>`
+`src/congruence.rs` implements the domain as `Congruence<W: Word64>`
 (with the bound on its implementation). Fields are private. The existing
 `domains::d8/d16/d32/d64::Congruence` names are aliases of the generic type.
 The canonical representation is:
@@ -214,8 +220,8 @@ deferred. Quantified proofs use explicit triggers; #114 adds no trusted items.
 
 The focused Congruence target takes about 2.5 seconds locally. The unchanged exhaustive
 CRT helper target dominates the normal suite runtime (about 40 seconds).
-`cargo test` passes 75 integration tests: 8 CRT/helper, 32 Congruence,
-3 reference-domain and 32 mirror tests (0 failures; 1 unrelated doctest ignored).
+`cargo test` passes 78 integration tests: 8 CRT/helper, 32 Congruence,
+6 reference-domain and 32 mirror tests (0 failures; 1 unrelated doctest ignored).
 The verification count above uses the repository-pinned Verus
 `0.2026.09.20.aef82ed`, matching the pinned `vstd` dependency.
 
@@ -240,3 +246,12 @@ binary checks cover the other eight laws. Existing full-u8 normalization,
 negation, boundary, and all-canonical-upper-bound tests remain in place.
 The oracle is exhaustive within its stated input model, not over every pair
 or triple of all 16,640 canonical u8 classes.
+
+### PR #117 compatibility
+
+The upstream `Word` API and its u128 implementation are preserved unchanged.
+`Word64: Word` carries the local lossless u64 conversions and modulus bound
+for the existing widened engine, with proved instances for u8/u16/u32/u64.
+Congruence and its lattice harnesses use this bound; their operation contracts,
+algorithms, and exhaustive tests are preserved. Upstream `Semantics::mul`,
+`Mul<S>`, interval precision changes, and widening guidance remain intact.

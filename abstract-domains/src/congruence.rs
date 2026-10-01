@@ -9,7 +9,7 @@ use crate::arithmetic::*;
 use crate::lattice::*;
 use crate::semantics::*;
 use crate::transfer::Arith;
-use crate::word::Word;
+use crate::word::{Word, Word64};
 use vstd::arithmetic::div_mod::*;
 use vstd::prelude::*;
 
@@ -41,7 +41,7 @@ proof fn lemma_next(m: nat, r: nat, x: nat)
 }
 
 /// Bridge executable word addition to the shared unsigned semantics.
-fn wrapping_sum<W: Word>(a: W, b: W) -> (r: W)
+fn wrapping_sum<W: Word64>(a: W, b: W) -> (r: W)
     ensures r == Unsigned::<W>::add(a, b),
         r.view() == (a.view() + b.view()) % W::modulus(),
 {
@@ -76,7 +76,7 @@ fn wrapping_neg<W: Word>(x: W) -> (r: W)
     r
 }
 
-impl<W: Word> Congruence<W> {
+impl<W: Word64> Congruence<W> {
     pub closed spec fn modulus(&self) -> W { self.modulus }
     pub closed spec fn residue(&self) -> W { self.residue }
 
@@ -339,6 +339,7 @@ impl<W: Word> Congruence<W> {
         let wide_modulus = gcd_machine_modulus(stride);
         proof {
             W::lemma_modulus();
+            W::lemma_modulus64();
             stride.lemma_view_bounded();
             assert(wide_modulus <= stride.view()) by (nonlinear_arith)
                 requires wide_modulus > 0, stride.view() > 0,
@@ -375,6 +376,7 @@ impl<W: Word> Congruence<W> {
         let wide_modulus = gcd_machine_modulus(self.modulus);
         proof {
             W::lemma_modulus();
+            W::lemma_modulus64();
             self.modulus.lemma_view_bounded();
             assert(wide_modulus <= self.modulus.view()) by (nonlinear_arith)
                 requires wide_modulus > 0, self.modulus.view() > 0,
@@ -607,7 +609,7 @@ impl<W: Word> Congruence<W> {
     }
 }
 
-impl<W: Word> Domain for Congruence<W> {
+impl<W: Word64> Domain for Congruence<W> {
     type C = W;
     open spec fn wf(&self) -> bool { Congruence::wf(self) }
     open spec fn gamma(&self, x: W) -> bool { Congruence::gamma(self, x) }
@@ -689,7 +691,7 @@ impl<W: Word> Domain for Congruence<W> {
     }
 }
 
-impl<W: Word> Arith<Unsigned<W>> for Congruence<W> {
+impl<W: Word64> Arith<Unsigned<W>> for Congruence<W> {
     fn add(&self, o: &Self) -> (r: Self) {
         let r = Congruence::add(self, o);
         proof {

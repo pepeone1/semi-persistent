@@ -1,7 +1,7 @@
 # Semi-Persistent Abstract Domains
 
 A proved abstract domains library for bitvector arithmetic. The ordinary Verus
-run has 1237 verified conditions and 0 errors, and a CI source gate rejects
+run has 1317 verified conditions and 0 errors, and a CI source gate rejects
 project-local `admit()`/`assume()` calls. The pinned `vstd` dependency remains
 inside the trust boundary. A separate 32-test Rust mirror suite supplies finite
 randomized/exhaustive evidence.
@@ -323,7 +323,11 @@ project-local admits.
 
 Native Rust implementations on u8, u16, u32, and u64 via macro generation.
 The u128 instantiation is disabled because its bitvector obligations exceed
-current solver capacity. Five domain types are enabled at each active width:
+current solver capacity. This restriction is specific to the macro-generated
+domains: upstream generic `Word` and `Interval<W>` support u128. Congruence
+uses the separate `Word64` extension (u8/u16/u32/u64) for its widened CRT
+implementation and retains its Week 6 lattice proofs and exhaustive oracle.
+Five domain types are enabled at each active width:
 ExecTnum, ExecAnum, ExecUnum, Interval, and ReducedProduct.
 
 The **value bridge** connects native wrapping arithmetic to spec chopping:
@@ -386,5 +390,5 @@ regenerate them. The source contains no executable `admit()` or `assume()`.
 | Unum domain | Sound unbounded/bounded add and mul; no general exactness theorem |
 | Congruence | Generic `Domain` and `Arith<Unsigned<W>>`; exact meet/refinement and LUB join |
 | Reduced product | 4-domain (Tnum×Anum×Interval×Unum) |
-| Multi-width | u8, u16, u32, u64 (`u128` disabled) |
+| Multi-width | Macro-generated domains and Congruence: u8/u16/u32/u64; generic `Word` and `Interval<W>` also support u128 |
 | Rust mirror tests | See `proof-status.md` for the regenerated count |

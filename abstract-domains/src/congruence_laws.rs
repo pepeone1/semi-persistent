@@ -5,17 +5,17 @@
 #![allow(unused_imports, unused_variables)]
 use crate::congruence::Congruence;
 use crate::lattice::{BotOr, Domain};
-use crate::word::Word;
+use crate::word::Word64;
 use vstd::prelude::*;
 
 verus! {
 type C<W> = BotOr<Congruence<W>>;
 
-pub open spec fn subset<W: Word>(a: &C<W>, b: &C<W>) -> bool {
+pub open spec fn subset<W: Word64>(a: &C<W>, b: &C<W>) -> bool {
     forall|x: W| #[trigger] a.gamma(x) ==> b.gamma(x)
 }
 
-proof fn canonical<W: Word>(a: &C<W>, b: &C<W>)
+proof fn canonical<W: Word64>(a: &C<W>, b: &C<W>)
     requires a.wf(), b.wf(), subset(a, b), subset(b, a),
     ensures *a == *b,
 {
@@ -40,7 +40,7 @@ proof fn canonical<W: Word>(a: &C<W>, b: &C<W>)
 
 // Specialize the existing bottom lifting so the stronger Congruence contracts
 // remain visible. The generic Domain interface intentionally allows inexactness.
-fn meet<W: Word>(a: &C<W>, b: &C<W>) -> (r: C<W>)
+fn meet<W: Word64>(a: &C<W>, b: &C<W>) -> (r: C<W>)
     requires a.wf(), b.wf(),
     ensures r.wf(), forall|x: W| #[trigger] r.gamma(x) == (a.gamma(x) && b.gamma(x)),
 {
@@ -63,7 +63,7 @@ fn meet<W: Word>(a: &C<W>, b: &C<W>) -> (r: C<W>)
     }
 }
 
-fn join<W: Word>(a: &C<W>, b: &C<W>) -> (r: C<W>)
+fn join<W: Word64>(a: &C<W>, b: &C<W>) -> (r: C<W>)
     requires a.wf(), b.wf(),
     ensures r.wf(), subset(a, &r), subset(b, &r),
         forall|c: C<W>| #[trigger] c.wf() && subset(a, &c) && subset(b, &c)
@@ -111,7 +111,7 @@ fn join<W: Word>(a: &C<W>, b: &C<W>) -> (r: C<W>)
 
 /// Verifies structural equality for all five meet laws, for arbitrary words
 /// and arbitrary well-formed operands (including bottom).
-pub fn verify_meet_laws<W: Word>(a: &C<W>, b: &C<W>, c: &C<W>)
+pub fn verify_meet_laws<W: Word64>(a: &C<W>, b: &C<W>, c: &C<W>)
     requires a.wf(), b.wf(), c.wf(),
 {
     let aa = meet(a, a);
@@ -140,7 +140,7 @@ pub fn verify_meet_laws<W: Word>(a: &C<W>, b: &C<W>, c: &C<W>)
 
 /// Verifies structural equality for all five join laws from the existing LUB
 /// contract, without assuming that join is exact set union.
-pub fn verify_join_laws<W: Word>(a: &C<W>, b: &C<W>, c: &C<W>)
+pub fn verify_join_laws<W: Word64>(a: &C<W>, b: &C<W>, c: &C<W>)
     requires a.wf(), b.wf(), c.wf(),
 {
     let aa = join(a, a);
