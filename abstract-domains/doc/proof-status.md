@@ -1,12 +1,12 @@
 # Abstract Domains Proof Status
 
-Last refreshed: 2026-09-29.
+Last refreshed: 2026-09-30.
 
 ## Current result
 
 ```text
 cargo verus verify
-1237 verified, 0 errors
+1242 verified, 0 errors
 ```
 
 The project source contains no executable `admit()` or `assume()` calls. CI
@@ -198,7 +198,7 @@ semantics. Constants are exact. General arithmetic results are proved sound,
 not exact or optimal. Signed instances, multiplication, and division remain
 deferred. Quantified proofs use explicit triggers; #114 adds no trusted items.
 
-`cargo test --test congruence` passes 31 tests against the real implementation:
+`cargo test --test congruence` passes 32 tests against the real implementation:
 
 - All 65,536 raw u8 pairs against all 256 words, including normalization,
   nonemptiness, canonical invariants, and unique representation of all 16,640 sets.
@@ -212,9 +212,31 @@ deferred. Quantified proofs use explicit triggers; #114 adds no trusted items.
 - Trait and inherent API regressions at u8/u16/u32/u64, external Bottom,
   constants/top, singleton collapse, CRT outcomes and legacy aliases.
 
-The focused target takes about 0.4 seconds locally. The unchanged exhaustive
+The focused Congruence target takes about 2.5 seconds locally. The unchanged exhaustive
 CRT helper target dominates the normal suite runtime (about 40 seconds).
-`cargo test` passes 74 integration tests: 8 CRT/helper, 31 Congruence,
+`cargo test` passes 75 integration tests: 8 CRT/helper, 32 Congruence,
 3 reference-domain and 32 mirror tests (0 failures; 1 unrelated doctest ignored).
 The verification count above uses the repository-pinned Verus
 `0.2026.09.20.aef82ed`, matching the pinned `vstd` dependency.
+
+### Week 6 lattice verification
+
+`src/congruence_laws.rs` verifies structural idempotence, commutativity,
+associativity, top/bottom identity and absorption for meet and join (ten laws).
+The generic verification harnesses call existing Congruence operations and
+specialize the existing bottom-lifting cases to retain exact intersection and
+LUB contracts, which the general `Domain` interface intentionally does not
+require. Canonical uniqueness lifts semantic equality to structural equality;
+nonemptiness distinguishes values from bottom. No arithmetic algorithms,
+existing contracts, or trust assumptions are changed.
+
+The continuous small-model oracle enumerates all 81 raw descriptions with
+modulus/residue in `0..=8`, all 6,561 ordered input pairs, and all 256 concrete
+u8 values (including wrapping results). It checks canonicalization, exact
+refinement/intersection, join/widen containment, and add/sub/neg containment
+using concrete bitsets. All ordered triples (with repetition) of deduplicated canonical states from
+that family plus bottom check the actual `BotOr` meet/join associativity; unary and
+binary checks cover the other eight laws. Existing full-u8 normalization,
+negation, boundary, and all-canonical-upper-bound tests remain in place.
+The oracle is exhaustive within its stated input model, not over every pair
+or triple of all 16,640 canonical u8 classes.
