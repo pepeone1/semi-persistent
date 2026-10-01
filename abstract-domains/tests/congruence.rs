@@ -842,3 +842,109 @@ fn u128_arithmetic_boundaries_and_precision() {
     );
     assert_eq!(C128::new(half, 0).neg().parts(), (half, 0));
 }
+
+fn lifted_parts(c: &BotOr<C>) -> Option<(u8, u8)> {
+    match c {
+        BotOr::Bot => None,
+        BotOr::Val(c) => {
+            check_wf(c);
+            Some(c.parts())
+        }
+    }
+}
+
+// Exhaustive Cartesian small-input model, with the *entire* concrete u8
+// universe retained so overflow/underflow cannot hide outside a sample window.
+#[test]
+fn exhaustive_small_model_transfers_and_lattice_laws() {
+    let mut inputs = Vec::new();
+    for m in 0..=8 {
+        for r in 0..=8 {
+            let a = C::new(m, r);
+            let bits = oracle(m, r);
+            check_wf(&a);
+            assert_eq!(oracle(a.parts().0, a.parts().1), bits);
+            assert_eq!(C::new(a.parts().0, a.parts().1).parts(), a.parts());
+            inputs.push((a, bits));
+        }
+    }
+    for (a, av) in &inputs {
+        let negative = <C as Arith<Unsigned<u8>>>::neg(a);
+        check_wf(&negative);
+        let negative_bits = oracle(negative.parts().0, negative.parts().1);
+        for x in members(av) {
+            assert!(members(&negative_bits).any(|n| n == x.wrapping_neg()));
+        }
+        for (b, bv) in &inputs {
+            let sum = <C as Arith<Unsigned<u8>>>::add(a, b);
+            let difference = <C as Arith<Unsigned<u8>>>::sub(a, b);
+            check_wf(&sum);
+            check_wf(&difference);
+            let sb = oracle(sum.parts().0, sum.parts().1);
+            let db = oracle(difference.parts().0, difference.parts().1);
+            let has = |bits: &[u64; 4], x: u8| bits[usize::from(x / 64)] & (1u64 << (x % 64)) != 0;
+            for x in members(av) {
+                for y in members(bv) {
+                    assert!(
+                        has(&sb, x.wrapping_add(y)),
+                        "add {:?} {:?}: {x}, {y}",
+                        a.parts(),
+                        b.parts()
+                    );
+                    assert!(
+                        has(&db, x.wrapping_sub(y)),
+                        "sub {:?} {:?}: {x}, {y}",
+                        a.parts(),
+                        b.parts()
+                    );
+                }
+            }
+            assert_eq!(Domain::leq(a, b), bit_subset(av, bv));
+            let intersection = std::array::from_fn(|k| av[k] & bv[k]);
+            match a.meet(b) {
+                BotOr::Bot => assert_eq!(intersection, [0; 4]),
+                BotOr::Val(c) => {
+                    check_wf(&c);
+                    assert_eq!(oracle(c.parts().0, c.parts().1), intersection);
+                }
+            }
+            let joined = a.join(b);
+            check_wf(&joined);
+            let jb = oracle(joined.parts().0, joined.parts().1);
+            assert!(bit_subset(av, &jb) && bit_subset(bv, &jb));
+            assert_eq!(Domain::widen(a, b).parts(), joined.parts());
+        }
+    }
+    // Deduplicate only after testing every raw input pair. No new state is
+    // required for nested results: the real API computes those directly.
+    let mut states = vec![BotOr::Bot];
+    for (a, _) in inputs {
+        if !states.iter().any(|s| lifted_parts(s) == Some(a.parts())) {
+            states.push(BotOr::Val(a));
+        }
+    }
+    let top = BotOr::<C>::top();
+    let bottom = BotOr::Bot;
+    for a in &states {
+        assert_eq!(lifted_parts(&a.meet(a)), lifted_parts(a));
+        assert_eq!(lifted_parts(&a.join(a)), lifted_parts(a));
+        assert_eq!(lifted_parts(&a.meet(&top)), lifted_parts(a));
+        assert_eq!(lifted_parts(&a.meet(&bottom)), None);
+        assert_eq!(lifted_parts(&a.join(&top)), lifted_parts(&top));
+        assert_eq!(lifted_parts(&a.join(&bottom)), lifted_parts(a));
+        for b in &states {
+            assert_eq!(lifted_parts(&a.meet(b)), lifted_parts(&b.meet(a)));
+            assert_eq!(lifted_parts(&a.join(b)), lifted_parts(&b.join(a)));
+            for c in &states {
+                assert_eq!(
+                    lifted_parts(&a.meet(b).meet(c)),
+                    lifted_parts(&a.meet(&b.meet(c)))
+                );
+                assert_eq!(
+                    lifted_parts(&a.join(b).join(c)),
+                    lifted_parts(&a.join(&b.join(c)))
+                );
+            }
+        }
+    }
+}

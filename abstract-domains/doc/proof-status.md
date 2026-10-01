@@ -289,3 +289,25 @@ Verification uses the repository-pinned Verus
 
 The finite-height/rank theorem remains future lattice work; this domain does
 not yet prove the termination bound for join-based widening.
+
+### Week 6 lattice verification
+
+`src/congruence_laws.rs` verifies structural idempotence, commutativity,
+associativity, top/bottom identity and absorption for meet and join (ten laws).
+The generic verification harnesses call existing Congruence operations and
+specialize the existing bottom-lifting cases to retain exact intersection and
+LUB contracts, which the general `Domain` interface intentionally does not
+require. Canonical uniqueness lifts semantic equality to structural equality;
+nonemptiness distinguishes values from bottom. No arithmetic algorithms,
+existing contracts, or trust assumptions are changed.
+
+The continuous small-model oracle enumerates all 81 raw descriptions with
+modulus/residue in `0..=8`, all 6,561 ordered input pairs, and all 256 concrete
+u8 values (including wrapping results). It checks canonicalization, exact
+refinement/intersection, join/widen containment, and add/sub/neg containment
+using concrete bitsets. All ordered triples (with repetition) of deduplicated canonical states from
+that family plus bottom check the actual `BotOr` meet/join associativity; unary and
+binary checks cover the other eight laws. Existing full-u8 normalization,
+negation, boundary, and all-canonical-upper-bound tests remain in place.
+The oracle is exhaustive within its stated input model, not over every pair
+or triple of all 16,640 canonical u8 classes.
