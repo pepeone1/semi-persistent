@@ -58,8 +58,8 @@ fn exhaustive_raw_inputs_membership_normalization_and_canonicity() {
             let c = C::new(m, r);
             check_wf(&c);
             let expected = oracle(m, r);
-            let normalized = c.normalize();
-            assert_eq!(normalized.parts(), c.parts());
+            let copied = c;
+            assert!(copied.same(&c));
             let reconstructed = C::new(c.parts().0, c.parts().1);
             assert_eq!(reconstructed.parts(), c.parts());
             let mut actual = [0u64; 4];
@@ -70,11 +70,20 @@ fn exhaustive_raw_inputs_membership_normalization_and_canonicity() {
                     expected[usize::from(x / 64)] & (1u64 << (x % 64)) != 0,
                     "m={m}, r={r}, x={x}"
                 );
-                assert_eq!(normalized.contains(x), has);
                 if has {
                     actual[usize::from(x / 64)] |= 1u64 << (x % 64);
                 }
             }
+            let cardinality: u32 = actual.iter().map(|bits| bits.count_ones()).sum();
+            assert_eq!(c.is_top(), cardinality == 256);
+            assert_eq!(c.as_constant().is_some(), cardinality == 1);
+            if let Some(value) = c.as_constant() {
+                assert!(c.contains(value));
+            }
+            assert!(c.same(&reconstructed));
+            assert_eq!(c.same(&C::top()), actual == [u64::MAX; 4]);
+            assert_eq!(c.same(&C::constant(r)), actual == oracle(0, r));
+            assert_eq!(c.same(&C::new(3, r)), actual == oracle(3, r));
             // Every canonical representation is reached by its own raw pair.
             // Identical sets must always yield identical canonical pairs.
             if let Some(previous) = representatives.insert(actual, c.parts()) {
@@ -100,12 +109,12 @@ fn finite_width_singleton_and_second_member_boundary() {
 }
 
 #[test]
-fn generic_widths_and_legacy_aliases() {
+fn generic_widths_and_width_aliases() {
     macro_rules! check {
-        ($word:ty, $legacy:ty) => {{
+        ($word:ty, $alias:ty) => {{
             let c = Congruence::<$word>::new(<$word>::MAX, <$word>::MAX - 1);
             assert_eq!(c.parts(), (0, <$word>::MAX - 1));
-            let c: $legacy = Congruence::<$word>::new(<$word>::MAX, 0);
+            let c: $alias = Congruence::<$word>::new(<$word>::MAX, 0);
             assert!(c.contains(0));
             assert!(c.contains(<$word>::MAX));
             assert!(!c.contains(1));

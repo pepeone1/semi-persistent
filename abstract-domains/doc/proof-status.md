@@ -188,20 +188,36 @@ The canonical representation is:
 values. A singleton contains exactly its residue; a progression contains
 exactly the words whose remainder modulo its modulus is its residue.
 `contains` is proved equivalent to both specifications. This is set membership,
-not a signed or wrapping arithmetic transfer semantics.
+not a signed or wrapping arithmetic transfer semantics. Equivalently, `gamma`
+is the integer congruence restricted to the finite unsigned word range.
+Wrapping arithmetic can lose exactness: at u8, adding 1 to `(3, 0)` produces
+`{0, 1, 4, ..., 253}`, since 255 wraps to 0. Any congruence containing both
+0 and 1 is Top, so the best congruence abstraction is Top. A no-wrap condition
+can preserve the integer-congruence precision; arithmetic is outside this PR.
 
 `new(m, r)` normalizes a raw class: for `m = 0` it denotes `{r}`, otherwise
-it denotes `{x | x % m = r % m}`. This raw-input interpretation differs from
-applying the old `has` to an unreduced, malformed pair (which could be empty).
-The constructor proves preservation of the raw class through `raw_has` and
-establishes `wf`. It uses `Word::urem` and `checked_add`; when the normalized
-residue plus the modulus is not representable, it returns a singleton.
+it denotes `{x | x % m = r % m}`. The constructor proves preservation of the
+raw class through `raw_has` and establishes `wf`. It uses `Word::urem` and
+`checked_add`; when the normalized residue plus the modulus is not
+representable, it returns a singleton.
 For example, `Congruence::<u8>::new(201, 200)` has the same canonical pair as
 `constant(200)`. `constant` and `top` have semantic and representation contracts.
-`normalize()` on a constructed value is proved to be identity.
+The constructor also exposes all three canonical results through the public
+`modulus()` and `residue()` accessors: the input constant, the reduced class
+when its second member fits, or the collapsed constant otherwise.
+Constructed values implement `Clone, Copy`; `clone` proves structural equality.
+There is no identity `normalize` method.
+`is_top` and `as_constant` recognize exactly the universal and singleton sets.
+`same` uses two field comparisons and proves both structural and gamma equality.
 
-`lemma_nonempty` witnesses the residue. `lemma_canonical` proves that equal
-gamma sets of well-formed values imply structural equality: residues are the
+Public `residue_member` witnesses the residue; `member_decomposition` gives
+its least-member bound, quotient decomposition, and the gap to any later member.
+Public `lemma_second` constructs the representable second member. These methods
+state their contracts with public spec accessors. Public `lemma_next` supplies
+the gap fact using the same accessors, requiring only reduction rather than
+full canonicality so it also applies before singleton collapse.
+`lemma_nonempty` follows from residue membership. `lemma_canonical` proves
+that equal gamma sets of well-formed values imply structural equality: residues are the
 least members, and nonconstant steps are determined by the second members.
 Both use the common `Domain` proof obligations as inherent methods, without
 proof bypasses or changes to the trust boundary.
@@ -216,10 +232,11 @@ future empty results will use the existing external `BotOr` architecture.
 The exhaustive oracle checks all 65,536 raw u8 pairs against all 256 words,
 including normalization, nonemptiness, canonical invariants, and unique
 representation of all 16,640 distinct sets. Other cases cover constant/top,
-singleton collapse, second-member boundaries, all four word widths and legacy
-aliases. The old six Congruence mirror tests were replaced by this target.
+singleton collapse, second-member boundaries, all four word widths and width
+aliases. The oracle also checks the canonical query helpers against the sets.
 
-`cargo test` passes 47 integration tests: 8 CRT/helper, 4 Congruence,
-3 reference-domain and 32 mirror tests (0 failures; 1 unrelated doctest ignored).
-The verification count above uses the repository-pinned Verus
+Verification uses the repository-pinned Verus
 `0.2026.09.20.aef82ed`, matching the pinned `vstd` dependency.
+
+The finite-height/rank theorem remains future lattice work; this semantic core
+does not yet prove the termination bound for join-based widening.
