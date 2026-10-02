@@ -3,9 +3,7 @@
 //! Canonical, nonempty congruences over unsigned finite-width words.
 //! This semantic core intentionally does not implement `Domain`: its lattice
 //! operations belong to the subsequent Congruence core change.
-#![allow(unused_imports, unused_variables)]
 use crate::word::Word;
-use vstd::arithmetic::div_mod::*;
 use vstd::prelude::*;
 
 verus! {
@@ -13,26 +11,24 @@ verus! {
 /// `(0, r)` is a singleton; `(1, 0)` is top. Other canonical pairs
 /// satisfy `r < m` and have a representable second member `r + m`.
 /// Use `new` for raw pairs; fields cannot bypass normalization.
+#[derive(Copy)]
 pub struct Congruence<W> {
     modulus: W,
     residue: W,
+}
+
+// Verus cannot specify Rust's derived Clone for this generic type.
+// Use the Copy implementation directly and expose its structural contract.
+impl<W: Copy> Clone for Congruence<W> {
+    fn clone(&self) -> (r: Self)
+        ensures r == *self,
+    { *self }
 }
 
 /// Raw descriptions use a congruence class, even for an unreduced residue.
 pub open spec fn raw_has<W: Word>(m: W, r: W, x: W) -> bool {
     if m.view() == 0 { x == r }
     else { x.view() % m.view() == r.view() % m.view() }
-}
-
-/// A member after the least member is at least one full step away.
-proof fn lemma_next(m: nat, r: nat, x: nat)
-    requires m > 0, r < m, x % m == r,
-    ensures r <= x, x == r || r + m <= x,
-{
-    lemma_mod_decreases(x, m);
-    lemma_fundamental_div_mod(x as int, m as int);
-    assert(x == r || r + m <= x) by (nonlinear_arith)
-        requires m > 0, x == m * (x / m) + r;
 }
 
 impl<W: Word> Congruence<W> {
@@ -45,6 +41,9 @@ impl<W: Word> Congruence<W> {
             && self.residue().view() + self.modulus().view() < W::modulus())
     }
 
+    /// Integer congruence restricted to the unsigned finite word range.
+    /// Wrapping arithmetic can lose exactness: at u8, `(3, 0) + 1`
+    /// contains both 0 (from 255) and 1, so its best congruence is Top.
     pub open spec fn gamma(&self, x: W) -> bool {
         if self.modulus().view() == 0 { x == self.residue() }
         else { x.view() % self.modulus().view() == self.residue().view() }
@@ -84,14 +83,20 @@ impl<W: Word> Congruence<W> {
     pub fn new(modulus: W, residue: W) -> (r: Self)
         ensures r.wf(),
             forall|x: W| #[trigger] r.gamma(x) <==> raw_has(modulus, residue, x),
+            modulus.view() == 0 ==> r.modulus().view() == 0 && r.residue() == residue,
+            modulus.view() > 0 ==> r.residue().view() == residue.view() % modulus.view(),
+            modulus.view() > 0 && residue.view() % modulus.view() + modulus.view() < W::modulus()
+                ==> r.modulus() == modulus,
+            modulus.view() > 0 && residue.view() % modulus.view() + modulus.view() >= W::modulus()
+                ==> r.modulus().view() == 0,
     {
         if modulus.eq(W::zero()) { Self::constant(residue) }
         else {
             let rem = residue.urem(modulus);
-            proof { lemma_mod_bound(residue.view() as int, modulus.view() as int); }
+            proof { vstd::arithmetic::div_mod::lemma_mod_bound(residue.view() as int, modulus.view() as int); }
             match rem.checked_add(modulus) {
-                Some(second) => {
-                    proof { second.lemma_view_bounded(); }
+                Some(_second) => {
+                    proof { _second.lemma_view_bounded(); }
                     Self { modulus, residue: rem }
                 },
                 None => {
@@ -99,9 +104,10 @@ impl<W: Word> Congruence<W> {
                     proof {
                         assert forall|x: W| #[trigger] r.gamma(x) <==> raw_has(modulus, residue, x) by {
                             x.lemma_view_bounded();
-                            lemma_small_mod(rem.view(), modulus.view());
+                            vstd::arithmetic::div_mod::lemma_small_mod(rem.view(), modulus.view());
                             if raw_has(modulus, residue, x) {
-                                lemma_next(modulus.view(), rem.view(), x.view());
+                                let raw = Self { modulus, residue: rem };
+                                raw.lemma_next(x);
                                 W::lemma_view_injective(x, rem);
                             }
                         }
@@ -112,43 +118,112 @@ impl<W: Word> Congruence<W> {
         }
     }
 
-    /// Already-constructed values are canonical, so normalization is identity.
-    /// To normalize a raw/legacy pair, use `new(modulus, residue)`.
-    pub fn normalize(&self) -> (r: Self)
+    /// Recognize the canonical top in constant time.
+    pub fn is_top(&self) -> (r: bool)
         requires self.wf(),
-        ensures r.wf(), r == *self,
-            forall|x: W| #[trigger] r.gamma(x) == self.gamma(x),
-    { Self { modulus: self.modulus, residue: self.residue } }
+        ensures r == (self.modulus().view() == 1 && self.residue().view() == 0),
+            r == (forall|x: W| #[trigger] self.gamma(x)),
+    {
+        let top = Self::top();
+        self.same(&top)
+    }
+
+    /// Extract exactly the singleton classes.
+    pub fn as_constant(&self) -> (r: Option<W>)
+        requires self.wf(),
+        ensures r.is_some() == (self.modulus().view() == 0),
+            match r {
+                Some(c) => c == self.residue() && (forall|x: W| #[trigger] self.gamma(x) <==> x == c),
+                None => exists|x: W| #[trigger] self.gamma(x) && x != self.residue(),
+            },
+    {
+        if self.modulus.eq(W::zero()) { Some(self.residue) }
+        else {
+            proof {
+                self.residue_member();
+                let s = self.lemma_second();
+                assert(self.gamma(s) && s != self.residue());
+            }
+            None
+        }
+    }
+
+    /// Canonical equality: two word comparisons, with no enumeration.
+    pub fn same(&self, other: &Self) -> (r: bool)
+        requires self.wf(), other.wf(),
+        ensures r == (*self == *other),
+            r == (forall|x: W| #[trigger] self.gamma(x) == other.gamma(x)),
+    {
+        proof {
+            W::lemma_view_injective(self.modulus, other.modulus);
+            W::lemma_view_injective(self.residue, other.residue);
+            if forall|x: W| #[trigger] self.gamma(x) == other.gamma(x) {
+                Self::lemma_canonical(self, other);
+            }
+        }
+        self.modulus.eq(other.modulus) && self.residue.eq(other.residue)
+    }
+
+    /// Any later member is at least one modulus beyond the residue.
+    /// Only reduction is required, so this also applies before singleton collapse.
+    pub proof fn lemma_next(&self, x: W)
+        requires self.modulus().view() > 0,
+            self.residue().view() < self.modulus().view(), self.gamma(x),
+        ensures self.residue().view() <= x.view(),
+            x == self.residue() || self.residue().view() + self.modulus().view() <= x.view(),
+    {
+        let m = self.modulus().view();
+        let r = self.residue().view();
+        let v = x.view();
+        vstd::arithmetic::div_mod::lemma_mod_decreases(v, m);
+        vstd::arithmetic::div_mod::lemma_fundamental_div_mod(v as int, m as int);
+        assert(v == r || r + m <= v) by (nonlinear_arith)
+            requires m > 0, v == m * (v / m) + r;
+        W::lemma_view_injective(x, self.residue());
+    }
+
+    /// The canonical residue is always a member.
+    pub proof fn residue_member(&self)
+        requires self.wf(),
+        ensures self.gamma(self.residue()),
+    {
+        if self.modulus.view() > 0 { vstd::arithmetic::div_mod::lemma_small_mod(self.residue.view(), self.modulus.view()); }
+    }
 
     pub proof fn lemma_nonempty(&self)
         requires self.wf(),
         ensures exists|c: W| self.gamma(c),
     {
-        if self.modulus.view() > 0 { lemma_small_mod(self.residue.view(), self.modulus.view()); }
-        assert(self.gamma(self.residue));
+        self.residue_member();
     }
 
-    proof fn lemma_least(&self, x: W)
+    /// Decompose a member into the least member plus a nonnegative step count.
+    pub proof fn member_decomposition(&self, x: W)
         requires self.wf(), self.gamma(x),
-        ensures self.residue.view() <= x.view(),
-            self.modulus.view() > 0 ==> (x == self.residue || self.residue.view() + self.modulus.view() <= x.view()),
+        ensures self.residue().view() <= x.view(),
+            self.modulus().view() == 0 ==> x == self.residue(),
+            self.modulus().view() > 0 ==> (
+                x.view() == self.residue().view() + self.modulus().view() * (x.view() / self.modulus().view())
+                && (x == self.residue() || self.residue().view() + self.modulus().view() <= x.view())),
     {
         if self.modulus.view() > 0 {
-            lemma_next(self.modulus.view(), self.residue.view(), x.view());
+            self.lemma_next(x);
+            vstd::arithmetic::div_mod::lemma_fundamental_div_mod(x.view() as int, self.modulus.view() as int);
             W::lemma_view_injective(x, self.residue);
         }
     }
 
-    proof fn lemma_second(&self) -> (s: W)
-        requires self.wf(), self.modulus.view() > 0,
-        ensures self.gamma(s), s.view() == self.residue.view() + self.modulus.view(),
+    /// Every canonical nonconstant has this representable second member.
+    pub proof fn lemma_second(&self) -> (s: W)
+        requires self.wf(), self.modulus().view() > 0,
+        ensures self.gamma(s), s.view() == self.residue().view() + self.modulus().view(),
     {
         let i = self.residue.view() + self.modulus.view();
         let s = W::from_int(i as int);
         W::lemma_from_int(i as int);
-        lemma_small_mod(i, W::modulus());
-        lemma_mod_add_multiples_vanish(self.residue.view() as int, self.modulus.view() as int);
-        lemma_small_mod(self.residue.view(), self.modulus.view());
+        vstd::arithmetic::div_mod::lemma_small_mod(i, W::modulus());
+        vstd::arithmetic::div_mod::lemma_mod_add_multiples_vanish(self.residue.view() as int, self.modulus.view() as int);
+        vstd::arithmetic::div_mod::lemma_small_mod(self.residue.view(), self.modulus.view());
         s
     }
 
@@ -158,14 +233,12 @@ impl<W: Word> Congruence<W> {
         ensures *a == *b,
     {
         // Equal sets have the same least member, hence the same residue.
-        a.lemma_nonempty();
-        b.lemma_nonempty();
-        if a.modulus.view() > 0 { lemma_small_mod(a.residue.view(), a.modulus.view()); }
-        if b.modulus.view() > 0 { lemma_small_mod(b.residue.view(), b.modulus.view()); }
+        a.residue_member();
+        b.residue_member();
         assert(a.gamma(a.residue) && b.gamma(b.residue));
         assert(a.gamma(b.residue) && b.gamma(a.residue));
-        a.lemma_least(b.residue);
-        b.lemma_least(a.residue);
+        a.member_decomposition(b.residue);
+        b.member_decomposition(a.residue);
         W::lemma_view_injective(a.residue, b.residue);
         // Each nonconstant has a second member. It rules out equality with
         // a singleton and bounds the other progression's step from above.
@@ -173,12 +246,12 @@ impl<W: Word> Congruence<W> {
         if a.modulus.view() > 0 {
             let s = a.lemma_second();
             assert(b.gamma(s));
-            b.lemma_least(s);
+            b.member_decomposition(s);
         }
         if b.modulus.view() > 0 {
             let s = b.lemma_second();
             assert(a.gamma(s));
-            a.lemma_least(s);
+            a.member_decomposition(s);
         }
         W::lemma_view_injective(a.modulus, b.modulus);
     }
