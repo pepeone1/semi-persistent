@@ -3,8 +3,8 @@
 //! Shared GCD, Bézout and finite-word CRT helpers. No domain operations.
 #![allow(unused_imports, unused_variables)]
 use crate::word::Word;
-use vstd::prelude::*;
 use vstd::arithmetic::div_mod::*;
+use vstd::prelude::*;
 
 verus! {
 
@@ -1126,7 +1126,7 @@ fn crt_wide(m1: u64, r1: u64, m2: u64, r2: u64) -> (result: Option<(u128, u128)>
 
     let a1_wide = a1 as u128;
     let m1_wide = m1 as u128;
-    let lcm_wide = lcm as u128;
+    let lcm_wide = lcm;
     let k_wide_2 = k as u128;
 
     proof {
@@ -1372,18 +1372,17 @@ pub fn crt_merge<W: Word>(m1: W, r1: W, m2: W, r2: W) -> (result: CrtMergeResult
     match wide {
         None => CrtMergeResult::Empty,
         Some((m, r)) => {
-            let result;
-            if r > max as u128 {
-                result = CrtMergeResult::Empty;
+            let result = if r > max as u128 {
+                CrtMergeResult::Empty
             } else if m > (max as u128) - r {
                 let value = W::from_u64(r as u64);
-                result = CrtMergeResult::Singleton { value };
+                CrtMergeResult::Singleton { value }
             } else {
-                result = CrtMergeResult::Class {
+                CrtMergeResult::Class {
                     modulus: W::from_u64(m as u64),
                     residue: W::from_u64(r as u64),
-                };
-            }
+                }
+            };
             proof {
                 assert forall|x: W| #[trigger] result.has(x) <==>
                     is_common_congruence_solution(x.view() as int, m1.view(), r1.view(), m2.view(), r2.view()) by {
