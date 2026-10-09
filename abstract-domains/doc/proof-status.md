@@ -1,6 +1,6 @@
 # Abstract Domains Proof Status
 
-Last refreshed: 2026-10-01.
+Last refreshed: 2026-10-08.
 
 ## Current result
 
@@ -15,7 +15,7 @@ The pinned `vstd` dependency contains admitted specifications; global
 dependency specifications, Verus, and the solver remain part of the trust
 boundary.
 
-Enabled executable widths:
+Enabled legacy macro-domain widths:
 
 - `d8` (`u8`)
 - `d16` (`u16`)
@@ -23,9 +23,9 @@ Enabled executable widths:
 - `d64` (`u64`)
 
 The `d128` macro invocation remains disabled because its bitvector obligations
-exceed the current solver capacity. Do not describe `u128` as an enabled or
-verified executable instance. The CRT implementation uses verified `u128`
-intermediates for the four enabled widths; this does not enable `d128`.
+exceed the current solver capacity. This is separate from generic `W: Word`
+code: `Word`, the shared GCD/CRT helpers, and `Interval<W>` support u128.
+The arithmetic helpers compute in `W`; they do not use widened intermediates.
 
 The separate Rust mirror suite contains 32 tests:
 
@@ -43,15 +43,26 @@ The CRT/helper suite calls the real shared `arithmetic` implementation:
 cargo test --test crt
 ```
 
-Its 8 tests cover all four word widths, GCD/Bézout properties, widened
-arithmetic and exact finite CRT outcomes. The exhaustive u8 oracle precomputes
-each input class by testing all 256 concrete values, then compares bitset
-intersections against the helper for all 532,701,120 unordered pairs of the
-32,640 normalized positive-modulus descriptions (including duplicate finite
+Its 12 tests cover all five word widths, GCD properties, machine-modulus GCD
+values and exponents, and exact finite CRT outcomes. The exhaustive u8 oracle
+precomputes each input class by testing all 256 concrete values, then compares
+bitset intersections against the helper for all 532,701,120 unordered pairs of
+the 32,640 normalized positive-modulus descriptions (including duplicate finite
 singleton encodings). Separate checks exercise every raw u8 residue with six
-partner classes in both operand orders. The focused target takes about 40
-seconds in the local debug build; it does not require an ignored/release-only
-test or a mirror implementation.
+partner classes in both operand orders. The full oracle remains enabled in
+debug tests and CI; it is neither ignored nor gated on release builds.
+
+The u128 cases distinguish LCM overflow, candidate multiplication overflow,
+candidate addition overflow, and a candidate equal to `MAX`. An independent
+`num-bigint` oracle checks boundary grids, deterministic full-width samples,
+and long Euclidean chains from consecutive Fibonacci numbers. Arbitrary-precision
+arithmetic is confined to tests and erased mathematical proofs.
+
+To time the same exhaustive oracle in release mode without changing coverage:
+
+```text
+cargo test -p semi-persistent-abstract-domains --release --test crt exhaustive_u8_crt_intersections -- --exact
+```
 
 ## Layer status
 
@@ -61,7 +72,7 @@ test or a mirror implementation.
 | L2 | Tnum, Anum, Unum, and division theory | proved |
 | L3 | chopped bounded-width domains | every stated contract verifies; containment covers the explicit operation inventory in `design.md`, not every defined operation |
 | L4 | `ExecTnum`, `ExecAnum`, `ExecUnum`, `Interval` at four enabled widths | every method verifies its stated contract; containment scope is listed below |
-| L4 | Shared GCD/CRT helpers | shared mathematical proofs, deterministic GCD, Bézout, generic exact finite CRT and widened helpers verified |
+| L4 | Shared GCD/CRT helpers | shared mathematical proofs, deterministic GCD, modular inverse, exact finite CRT and machine-modulus GCD verified |
 | L4 | `Congruence<W>` | generic unsigned semantics, canonical normalization, nonemptiness and canonicality proved; full `Domain` implementation deferred to the later lattice PR |
 
 All enabled L4 results are proved well formed where their contracts say so.
@@ -89,23 +100,29 @@ L4 soundness work.
 ### Shared arithmetic helpers
 
 `src/arithmetic.rs` owns the shared foundation; the width-independent `int`/
-`nat` proofs are no longer instantiated by `abstract_domain!`. `Word` supplies
-lossless `to_u64` and `from_u64` bridges (the latter requires an in-range
-input) and proves its modulus is at most 2^64. The generic APIs support u8/u16/u32/u64. A single
-private u64/i128/u128 engine retains the verified extended-Euclidean and CRT
-calculations without repeating them for each width.
+`nat` proofs are not instantiated by `abstract_domain!`. Runtime code uses
+only the upstream `Word` interface, with no `Word64` bound, conversion bridges,
+or wider integer arithmetic. The generic APIs support u8/u16/u32/u64/u128.
+The measured widening internal to upstream `Word::mulmod` remains unchanged.
 
 - `gcd_spec` is deterministic and recursive, decreasing on the second operand.
-  `gcd<W>` and `gcd_wide` return exactly this specification. Shared proofs
+  `gcd<W>` is unchanged and returns exactly this specification. Shared proofs
   establish divisibility of both inputs, Euclidean-step correctness, uniqueness,
   divisibility maximality, symmetry and associativity, including zero inputs.
-- `extended_gcd<W>` returns the named `ExtendedGcd<W> { gcd, x, y }`. It proves
-  equality with `gcd_spec`, Bézout's identity, and the original coefficient bounds.
-  Its private recursive engine retains the explicit decreasing argument.
-- `crt_merge<W>` requires **positive moduli** and accepts unreduced residues.
-  Its `wf` and `has` contracts exactly describe all representable common
-  solutions. The u128 engine preserves integer CRT exactness and computes
-  the exact LCM and least nonnegative common solution before classification.
+- A private iterative extended-Euclid helper computes the inverse of `m1/g`
+  modulo `n = m2/g`. Only one coefficient per Euclidean state is stored at
+  runtime, reduced with `mulmod` and modular subtraction. Loop invariants prove
+  the GCD, coefficient congruences and decreasing remainders. Signed Bézout
+  witnesses exist only in erased ghost code. Modulus one is handled explicitly.
+- `crt_merge<W>` retains its public signature, requires **positive moduli**,
+  and accepts unreduced residues. Its unchanged `wf` and `has` contracts exactly
+  describe all representable common solutions. `checked_mul` computes the LCM,
+  `mulmod` computes `k`, and `checked_mul`/`checked_add` construct the candidate.
+  Proofs establish that the mathematical candidate is the least nonnegative
+  solution and is strictly below the exact LCM, without executing either in a
+  wider type. Candidate overflow therefore means `Empty`; LCM overflow alone
+  does not. A representable candidate is a `Singleton` if the LCM overflows or
+  adding the LCM cannot reach a second representable member.
 
 | Result | Verified finite-word meaning |
 | --- | --- |
@@ -121,16 +138,39 @@ checking callers; their necessary mathematical facts remain shared. There are
 no existential GCD result specifications or `#![auto]` shortcuts in this module.
 Unrelated pre-existing domain proofs retain their existing annotations.
 
-`gcd_machine_modulus<W>` computes `gcd(m, 2^N)` in u128, including `m = 0` and
-`N = 64`. `lemma_wrapping_congruence` proves that reduction modulo 2^N preserves
-congruence modulo this GCD, for negative as well as nonnegative integers.
-`mul_wide` and `granger_modulus` compute exact widened products and
-`gcd(gcd(m1*m2, m1*r2), m2*r1)`. They provide the requested shared foundation;
-no Congruence multiplication or other transfer operation is implemented.
+`gcd_machine_modulus<W>(m) -> W` now requires `m.view() > 0` and computes
+`gcd(m, m.neg_nonzero())`, proved equal to `gcd(m, 2^bits)`. It retains the exact
+GCD and divisibility guarantees with `r.view()` replacing the old u128 cast.
 
-PR #112 depends on updated #106 (`732f6db`). Congruence's `Domain` implementation,
-refinement, join, meet, widen and arithmetic transfers remain deferred to #114
-or later. No proof bypasses or new trusted items were introduced.
+`gcd_machine_modulus_exponent<W>(m) -> u32` is total and uses `trailing_zeros`.
+Its contract states `pow2(result) == gcd_spec(m.view(), W::modulus())`, with
+`result == bits` for zero and `result < bits` otherwise. Thus zero at u128 is
+represented by exponent 128, never by an ordinary word pretending to hold
+2^128. `lemma_gcd_pow2` proves this interpretation from the valuation contract.
+`lemma_wrapping_congruence` remains unchanged and covers negative integers too.
+
+The runtime `ExtendedGcd`/`extended_gcd` API and the unused `gcd_wide`,
+`mul_wide`, and `granger_modulus` helpers were removed after checking production
+callers on the available branches and the dependent PRs. Their old tests were
+adapted to the retained GCD API and new modular/CRT behavior; tests specific to
+removed widened products were retired. Public ghost/spec Bézout and CRT lemmas,
+including `is_extended_gcd` and `crt_solution_class_exact`, remain available.
+
+Downstream coordination:
+
+- #114 must consume the nonzero machine-modulus helper's `W` result directly,
+  remove its conversion bridges, and prove the nonzero precondition. Zero is
+  represented through the exponent helper when needed. Congruence migration,
+  the CRT trigger improvement and uniform-wrap work remain in #114.
+- #118 must rebase onto updated #114, remove its temporary `Word64` trait and
+  bounds, and add `Congruence<u128>` regressions.
+- #124's StridedInterval code uses the unchanged `gcd`, `crt_merge`, and
+  `CrtMergeResult` APIs. Its inherited arithmetic implementation, helper tests,
+  and documentation must be reconciled with this version when rebasing.
+
+No Congruence domain migration, multiplication transfer, or reduced-product
+integration is implemented here. No proof bypasses or new trusted items were
+introduced.
 
 ### Congruence
 

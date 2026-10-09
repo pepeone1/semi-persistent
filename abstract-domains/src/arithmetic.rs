@@ -4,6 +4,7 @@
 #![allow(unused_imports, unused_variables)]
 use crate::word::Word;
 use vstd::arithmetic::div_mod::*;
+use vstd::arithmetic::power2::*;
 use vstd::prelude::*;
 
 verus! {
@@ -661,518 +662,6 @@ pub proof fn normalize_preserves_divisor(r: nat, m: nat, d: nat)
     congruence_shift(r as int, (r % m) as int, d as int, k * q);
 }
 
-/// Computes the GCD and Bézout coefficients.
-fn extended_gcd_u64(a: u64, b: u64) -> (result: ExtendedGcd<u64>)
-    ensures
-        is_extended_gcd(
-            result.gcd as nat,
-            result.x as int,
-            result.y as int,
-            a as nat,
-            b as nat,
-        ),
-        b == 0 ==> result.x == 1 && result.y == 0,
-        b != 0 ==> -(b as int) <= result.x as int <= b as int,
-        a != 0 ==> -(a as int) <= result.y as int <= a as int,
-    decreases b,
-{
-    if b == 0 {
-        proof {
-            if a == 0 {
-                // Special case: gcd(0, 0) = 0.
-                assert(is_gcd(0, 0, 0));
-            } else {
-                let an = a as nat;
-
-                // a is a positive common divisor of (a, 0).
-                assert(an > 0);
-                assert(an % an == 0);
-                assert(0nat % an == 0);
-                assert(is_common_divisor(an, an, 0));
-
-                // Every positive divisor of a is at most a.
-                assert forall|k: nat|
-                    #[trigger] is_common_divisor(k, an, 0) implies k <= an
-                by {
-                    assert(k > 0);
-                    assert(an % k == 0);
-
-                    assert(k <= an) by (nonlinear_arith)
-                        requires
-                            an > 0,
-                            k > 0,
-                            an % k == 0,
-                    {
-                    }
-                }
-
-                assert(is_gcd(an, an, 0));
-            }
-
-            assert(is_gcd(a as nat, a as nat, 0));
-
-            // Bézout identity: 1*a + 0*0 = a.
-            assert(is_extended_gcd(
-                a as nat,
-                1,
-                0,
-                a as nat,
-                0,
-            ));
-        }
-
-        ExtendedGcd { gcd: a, x: 1i128, y: 0i128 }
-    } else {
-        let r = a % b;
-        let ExtendedGcd { gcd: g, x: x1, y: y1 } = extended_gcd_u64(b, r);
-
-        proof {
-            // The Euclidean step preserves positive common divisors.
-            assert forall|d: nat| d > 0 implies
-                (#[trigger] is_common_divisor(d, a as nat, b as nat)
-                    <==> is_common_divisor(d, b as nat, r as nat))
-            by {
-                euclidean_step(a as nat, b as nat, d);
-            }
-
-            assert(is_gcd(g as nat, b as nat, r as nat));
-            assert(is_gcd(g as nat, a as nat, b as nat));
-        }
-
-        if r == 0 {
-            // The recursive call is extended_gcd(b, 0).
-            // Its coefficients are (1, 0), so g = b.
-            proof {
-                assert(x1 == 1);
-                assert(y1 == 0);
-
-                assert(
-                    (x1 as int) * (b as int)
-                        + (y1 as int) * 0
-                        == g as int
-                );
-
-                assert(g == b) by (nonlinear_arith)
-                    requires
-                        (x1 as int) * (b as int)
-                            + (y1 as int) * 0
-                            == g as int,
-                        x1 == 1,
-                {
-                }
-            }
-
-            proof {
-                assert(is_gcd(g as nat, a as nat, b as nat));
-                assert(g == b);
-
-                assert(is_extended_gcd(
-                    g as nat,
-                    0,
-                    1,
-                    a as nat,
-                    b as nat,
-                ));
-            }
-            ExtendedGcd { gcd: g, x: 0i128, y: 1i128 }
-        } else {
-            let q = (a / b) as i128;
-            let x = y1;
-
-            proof {
-                let ai = a as int;
-                let bi = b as int;
-                let ri = r as int;
-                let qi = q as int;
-                let x1i = x1 as int;
-                let y1i = y1 as int;
-
-                vstd::arithmetic::div_mod::lemma_fundamental_div_mod(
-                    ai,
-                    bi,
-                );
-
-                assert(qi == ai / bi);
-                assert(ri == ai % bi);
-                assert(ai == qi * bi + ri) by (nonlinear_arith)
-                    requires ai == bi * qi + ri;
-
-                // Bounds from extended_gcd(b, r):
-                // |x1| <= r and |y1| <= b.
-                assert(-ri <= x1i <= ri);
-                assert(-bi <= y1i <= bi);
-
-                assert(0 <= qi);
-                assert(0 <= ri);
-
-                // Bound q*y1 before executing the i128 multiplication.
-                assert(-ai <= qi * y1i <= ai)
-                    by (nonlinear_arith)
-                    requires
-                        ai == qi * bi + ri,
-                        0 <= qi,
-                        0 <= ri,
-                        0 <= bi,
-                        -bi <= y1i,
-                        y1i <= bi,
-                {
-                }
-            }
-
-            let product = q * y1;
-
-            proof {
-                let ai = a as int;
-                let bi = b as int;
-                let ri = r as int;
-                let qi = q as int;
-                let x1i = x1 as int;
-                let y1i = y1 as int;
-
-                vstd::arithmetic::div_mod::lemma_fundamental_div_mod(
-                    ai,
-                    bi,
-                );
-
-                assert(qi == ai / bi);
-                assert(ri == ai % bi);
-                assert(ai == qi * bi + ri);
-
-                assert(0 <= qi);
-                assert(0 <= ri);
-
-                // Use the recursive bounds, not merely |product| <= a.
-                assert(-ri <= x1i <= ri);
-                assert(-bi <= y1i <= bi);
-
-                assert(-qi * bi <= qi * y1i <= qi * bi)
-                    by (nonlinear_arith)
-                    requires
-                        0 <= qi,
-                        0 <= bi,
-                        -bi <= y1i,
-                        y1i <= bi,
-                {
-                }
-
-                assert(product as int == qi * y1i);
-
-                // |x1 - q*y1| <= r + q*b = a.
-                assert(-ai <= x1i - (product as int) <= ai)
-                    by (nonlinear_arith)
-                    requires
-                        ai == qi * bi + ri,
-                        0 <= qi,
-                        0 <= ri,
-                        -ri <= x1i,
-                        x1i <= ri,
-                        -qi * bi <= product as int,
-                        product as int <= qi * bi,
-                {
-                }
-            }
-
-            let y = x1 - product;
-
-            proof {
-                let ai = a as int;
-                let bi = b as int;
-                let ri = r as int;
-                let qi = q as int;
-
-                vstd::arithmetic::div_mod::lemma_fundamental_div_mod(
-                    ai,
-                    bi,
-                );
-
-                assert(qi == ai / bi);
-                assert(ri == ai % bi);
-                assert(ai == qi * bi + ri);
-
-                // Recursive Bézout identity:
-                // x1*b + y1*r = g.
-                assert(
-                    (x1 as int) * bi
-                        + (y1 as int) * ri
-                        == g as int
-                );
-
-                // Substitute r = a - q*b:
-                // y1*a + (x1 - q*y1)*b = g.
-                assert(
-                    (x as int) * ai
-                        + (y as int) * bi
-                        == g as int
-                ) by (nonlinear_arith)
-                    requires
-                        ai == qi * bi + ri,
-                        (x1 as int) * bi
-                            + (y1 as int) * ri
-                            == g as int,
-                        x as int == y1 as int,
-                        y as int
-                            == x1 as int - qi * (y1 as int),
-                {
-                }
-            }
-            proof {
-                assert(is_gcd(g as nat, a as nat, b as nat));
-
-                assert(
-                    (x as int) * (a as int)
-                        + (y as int) * (b as int)
-                        == g as int
-                );
-
-                assert(is_extended_gcd(
-                    g as nat,
-                    x as int,
-                    y as int,
-                    a as nat,
-                    b as nat,
-                ));
-            }
-            ExtendedGcd { gcd: g, x, y }
-        }
-    }
-}
-
-
-/// Width-independent widened CRT engine for the supported u8..u64 inputs.
-fn crt_wide(m1: u64, r1: u64, m2: u64, r2: u64) -> (result: Option<(u128, u128)>)
-    requires m1 > 0, m2 > 0,
-    ensures match result {
-        None => forall|x: int| !#[trigger] is_common_congruence_solution(x, m1 as nat, r1 as nat, m2 as nat, r2 as nat),
-        Some((m, r)) => m > 0 && r < m
-            && m == (m1 as nat / gcd_spec(m1 as nat, m2 as nat)) * m2 as nat
-            && forall|x: int| #[trigger] is_common_congruence_solution(x, m1 as nat, r1 as nat, m2 as nat, r2 as nat)
-                <==> x % (m as int) == r as int,
-    },
-{
-    let a1 = r1 % m1;
-    let a2 = r2 % m2;
-
-    let ExtendedGcd { gcd: g, x: s, y: _t } = extended_gcd_u64(m1, m2);
-
-    proof {
-        assert(is_extended_gcd(
-            g as nat,
-            s as int,
-            _t as int,
-            m1 as nat,
-            m2 as nat,
-        ));
-
-        assert(is_gcd(
-            g as nat,
-            m1 as nat,
-            m2 as nat,
-        ));
-
-        assert(!(m1 == 0 && m2 == 0));
-
-        assert(is_common_divisor(
-            g as nat,
-            m1 as nat,
-            m2 as nat,
-        ));
-
-        assert(g > 0);
-        assert((m1 as nat) % (g as nat) == 0);
-        assert((m2 as nat) % (g as nat) == 0);
-    }
-
-    if a1 % g != a2 % g {
-        proof {
-            crt_incompatible_no_solution(g as nat,
-                m1 as nat, a1 as nat, m2 as nat, a2 as nat);
-            vstd::arithmetic::div_mod::lemma_small_mod(a1 as nat, m1 as nat);
-            vstd::arithmetic::div_mod::lemma_small_mod(a2 as nat, m2 as nat);
-            assert forall|x: int| !#[trigger] is_common_congruence_solution(
-                x, m1 as nat, r1 as nat, m2 as nat, r2 as nat,
-            ) by {
-                assert(!is_common_congruence_solution(
-                    x, m1 as nat, a1 as nat, m2 as nat, a2 as nat));
-            }
-        }
-        return None;
-    }
-
-    // The exact LCM of two at-most-u64 moduli fits in u128.
-    let reduced = (m1 / g) as u128;
-    let m2_wide = m2 as u128;
-    proof {
-        positive_exact_quotient(m1 as nat, g as nat);
-        assert(reduced * m2_wide <= u128::MAX) by (nonlinear_arith)
-            requires reduced <= u64::MAX, m2_wide <= u64::MAX;
-        assert(reduced * m2_wide > 0) by (nonlinear_arith)
-            requires reduced > 0, m2_wide > 0;
-    }
-    let lcm = reduced * m2_wide;
-
-    // Bézout gives the inverse s of m1/g modulo n = m2/g.
-
-    let n = m2 / g;
-
-    proof {
-        positive_exact_quotient(m2 as nat, g as nat);
-        assert(n > 0);
-    }
-
-    // Compatibility gives (a2 - a1)/g = q2 - q1.
-    let q1 = a1 / g;
-    let q2 = a2 / g;
-    proof {
-        vstd::arithmetic::div_mod::lemma_fundamental_div_mod(a2 as int, g as int);
-        vstd::arithmetic::div_mod::lemma_fundamental_div_mod(m2 as int, g as int);
-        assert(q2 < n) by (nonlinear_arith)
-            requires a2 < m2, g > 0,
-                a2 as int == (g as int) * (q2 as int) + (a2 as int) % (g as int),
-                m2 as int == (g as int) * (n as int),
-                (a2 as int) % (g as int) >= 0;
-    }
-
-    // Compute (q2 - q1) mod n without the potentially overflowing q2 + n.
-    let q1_mod_n = q1 % n;
-
-    let delta_mod =
-        if q2 >= q1_mod_n {
-            q2 - q1_mod_n
-        } else {
-            n - (q1_mod_n - q2)
-        };
-
-    proof {
-        assert(delta_mod < n);
-        vstd::arithmetic::div_mod::lemma_fundamental_div_mod(q1 as int, n as int);
-        let shift = if q2 >= q1_mod_n { q1 as int / n as int }
-            else { q1 as int / n as int + 1 };
-        assert(delta_mod as int == (q2 as int - q1 as int) + (n as int) * shift)
-            by (nonlinear_arith)
-            requires q1 as int == (n as int) * (q1 as int / n as int) + q1_mod_n as int,
-                delta_mod as int == if q2 >= q1_mod_n { q2 as int - q1_mod_n as int }
-                    else { n as int - (q1_mod_n as int - q2 as int) },
-                shift == if q2 >= q1_mod_n { q1 as int / n as int }
-                    else { q1 as int / n as int + 1 };
-        congruence_shift(delta_mod as int, q2 as int - q1 as int, n as int, shift);
-    }
-
-    // Normalize s before multiplication to avoid large signed intermediates.
-
-    let ni = n as i128;
-
-    proof {
-        assert(ni > 0);
-    }
-
-    let s_rem = s % ni;
-
-    let s_mod_i =
-        if s_rem < 0 {
-            s_rem + ni
-        } else {
-            s_rem
-        };
-
-    proof {
-        assert(0 <= s_mod_i);
-        assert(s_mod_i < ni);
-    }
-
-    let s_mod = s_mod_i as u64;
-
-    proof {
-        assert((s_mod as nat) < (n as nat));
-        signed_remainder_normalized(s as int, n as int, s_rem as int);
-        assert(s_mod as int == (s as int) % (n as int));
-    }
-
-    // Compute k = delta*s mod n in u128; each factor fits in u64.
-
-    let delta_wide = delta_mod as u128;
-    let s_wide = s_mod as u128;
-    let n_wide = n as u128;
-
-    proof {
-        assert(delta_wide * s_wide <= u128::MAX) by (nonlinear_arith)
-            requires delta_wide <= u64::MAX, s_wide <= u64::MAX;
-    }
-    let product = delta_wide * s_wide;
-    let k_wide = product % n_wide;
-
-    proof {
-        assert(k_wide < n_wide);
-    }
-
-    let k = k_wide as u64;
-
-    proof {
-        assert(k < n);
-        vstd::arithmetic::div_mod::lemma_small_mod(s_mod as nat, n as nat);
-        vstd::arithmetic::div_mod::lemma_small_mod(k as nat, n as nat);
-        vstd::arithmetic::div_mod::lemma_mul_mod_noop_general(
-            delta_mod as int, s_mod as int, n as int);
-        vstd::arithmetic::div_mod::lemma_mul_mod_noop_general(
-            q2 as int - q1 as int, s as int, n as int);
-        assert((delta_mod as int) % (n as int) == (q2 as int - q1 as int) % (n as int));
-        assert((s_mod as int) % (n as int) == (s as int) % (n as int));
-        assert(k as int == ((delta_mod as int) * (s_mod as int)) % (n as int));
-        assert((k as int) % (n as int) == ((q2 as int - q1 as int) * (s as int)) % (n as int));
-        crt_candidate_solution(m1 as int, a1 as int, m2 as int, a2 as int,
-            g as int, s as int, _t as int, k as int);
-    }
-
-    // Construct a1 + m1*k in u128 before reducing modulo the LCM.
-
-    let a1_wide = a1 as u128;
-    let m1_wide = m1 as u128;
-    let lcm_wide = lcm;
-    let k_wide_2 = k as u128;
-
-    proof {
-        assert(m1_wide * k_wide_2 + a1_wide <= u128::MAX) by (nonlinear_arith)
-            requires m1_wide <= u64::MAX, k_wide_2 <= u64::MAX,
-                a1_wide <= u64::MAX;
-    }
-    let term = m1_wide * k_wide_2;
-    let candidate = a1_wide + term;
-
-    let residue_wide = candidate % lcm_wide;
-
-    proof {
-        assert(residue_wide < lcm_wide);
-    }
-
-    let residue = residue_wide;
-
-    proof {
-        assert(residue < lcm);
-
-        let d = g as nat;
-        crt_normalize_solution(candidate as int, m1 as nat, m2 as nat, d);
-        vstd::arithmetic::div_mod::lemma_small_mod(a1 as nat, m1 as nat);
-        vstd::arithmetic::div_mod::lemma_small_mod(a2 as nat, m2 as nat);
-        assert(is_common_congruence_solution(
-            residue as int, m1 as nat, r1 as nat, m2 as nat, r2 as nat));
-
-        gcd_unique(g as nat, d, m1 as nat, m2 as nat);
-        assert forall|x: int|
-            #[trigger] is_common_congruence_solution(
-                x, m1 as nat, r1 as nat, m2 as nat, r2 as nat,
-            ) <==> x % (lcm as int) == residue as int by {
-            crt_solution_class_exact(x, residue as nat,
-                m1 as nat, r1 as nat, m2 as nat, r2 as nat,
-                g as nat, s as int, _t as int);
-        }
-
-    }
-    proof {
-        lemma_gcd_spec(m1 as nat, m2 as nat);
-        gcd_unique(g as nat, gcd_spec(m1 as nat, m2 as nat), m1 as nat, m2 as nat);
-    }
-    Some((lcm, residue))
-}
-
 /// Connect the recursive specification to the traditional greatest divisor.
 pub proof fn lemma_gcd_spec(a: nat, b: nat)
     ensures is_gcd(gcd_spec(a, b), a, b),
@@ -1286,40 +775,6 @@ pub fn gcd<W: Word>(a: W, b: W) -> (r: W)
     }
 }
 
-/// Named Bézout result; coefficients fit i128 for all supported words.
-pub struct ExtendedGcd<W> {
-    pub gcd: W,
-    pub x: i128,
-    pub y: i128,
-}
-
-pub fn extended_gcd<W: Word>(a: W, b: W) -> (r: ExtendedGcd<W>)
-    ensures r.gcd.view() == gcd_spec(a.view(), b.view()),
-        is_extended_gcd(r.gcd.view(), r.x as int, r.y as int, a.view(), b.view()),
-        b.view() == 0 ==> r.x == 1 && r.y == 0,
-        b.view() != 0 ==> -(b.view() as int) <= r.x as int <= b.view(),
-        a.view() != 0 ==> -(a.view() as int) <= r.y as int <= a.view(),
-{
-    let coefficients = extended_gcd_u64(a.to_u64(), b.to_u64());
-    let g = coefficients.gcd;
-    let x = coefficients.x;
-    let y = coefficients.y;
-    proof {
-        a.lemma_view_bounded();
-        b.lemma_view_bounded();
-        lemma_gcd_spec(a.view(), b.view());
-        gcd_unique(g as nat, gcd_spec(a.view(), b.view()), a.view(), b.view());
-        if a.view() > 0 {
-            assert(g <= a.view()) by (nonlinear_arith)
-                requires g > 0, a.view() > 0, a.view() % (g as nat) == 0;
-        } else if b.view() > 0 {
-            assert(g <= b.view()) by (nonlinear_arith)
-                requires g > 0, b.view() > 0, b.view() % (g as nat) == 0;
-        }
-    }
-    ExtendedGcd { gcd: W::from_u64(g), x, y }
-}
-
 /// Finite-word intersection of two positive-modulus classes.
 pub enum CrtMergeResult<W> {
     Class { modulus: W, residue: W },
@@ -1359,6 +814,134 @@ proof fn lemma_class_member(x: nat, m: nat, r: nat)
     }
 }
 
+/// Subtraction modulo a positive modulus, with already reduced operands.
+fn submod<W: Word>(a: W, b: W, m: W) -> (r: W)
+    requires m.view() > 0, a.view() < m.view(), b.view() < m.view(),
+    ensures r.view() < m.view(),
+        r.view() as int == (a.view() as int - b.view() as int) % (m.view() as int),
+{
+    if b.le(a) {
+        let r = match a.checked_sub(b) { Some(r) => r, None => { proof { assert(false); } return W::zero(); } };
+        proof { lemma_small_mod(r.view(), m.view()); }
+        r
+    } else {
+        let d = match b.checked_sub(a) { Some(d) => d, None => { proof { assert(false); } return W::zero(); } };
+        let r = match m.checked_sub(d) { Some(r) => r, None => { proof { assert(false); } return W::zero(); } };
+        proof {
+            lemma_mod_add_multiples_vanish(a.view() as int - b.view() as int, m.view() as int);
+            lemma_small_mod(r.view(), m.view());
+        }
+        r
+    }
+}
+
+/// Dividing positive inputs by their GCD leaves coprime inputs.
+pub proof fn lemma_gcd_reduced(a: nat, b: nat)
+    requires a > 0, b > 0,
+    ensures gcd_spec(a / gcd_spec(a, b), b / gcd_spec(a, b)) == 1,
+{
+    lemma_gcd_spec(a, b);
+    let g = gcd_spec(a, b);
+    let p = a / g;
+    let n = b / g;
+    positive_exact_quotient(a, g);
+    positive_exact_quotient(b, g);
+    lemma_gcd_spec(p, n);
+    let d = gcd_spec(p, n);
+    lemma_fundamental_div_mod(a as int, g as int);
+    lemma_fundamental_div_mod(b as int, g as int);
+    lemma_fundamental_div_mod(p as int, d as int);
+    lemma_fundamental_div_mod(n as int, d as int);
+    assert(a == (g * d) * (p / d) && b == (g * d) * (n / d)) by (nonlinear_arith)
+        requires a == g * p, b == g * n, p == d * (p / d), n == d * (n / d);
+    assert(g * d > 0) by (nonlinear_arith) requires g > 0, d > 0;
+    lemma_mod_multiples_basic((p / d) as int, (g * d) as int);
+    lemma_mod_multiples_basic((n / d) as int, (g * d) as int);
+    assert(a == (p / d) * (g * d) && b == (n / d) * (g * d)) by (nonlinear_arith)
+        requires a == (g * d) * (p / d), b == (g * d) * (n / d);
+    assert(is_common_divisor(g * d, a, b));
+    assert(d == 1) by (nonlinear_arith) requires g > 0, d > 0, g * d <= g;
+}
+
+/// Iterative Euclid: only the inverse coefficient is stored at runtime,
+/// reduced modulo n after each update. Signed Bézout witnesses are ghost-only.
+fn inverse_mod<W: Word>(a: W, n: W) -> (s: W)
+    requires n.view() > 0, gcd_spec(a.view(), n.view()) == 1,
+    ensures s.view() < n.view(),
+        (s.view() * a.view()) % n.view() == 1nat % n.view(),
+{
+    if n.eq(W::one()) { return W::zero(); }
+    let mut old_r = a;
+    let mut r = n;
+    let mut old_s = W::one();
+    let mut s = W::zero();
+    let ghost mut old_x: int = 1;
+    let ghost mut x: int = 0;
+    let ghost mut old_y: int = 0;
+    let ghost mut y: int = 1;
+    proof {
+        lemma_small_mod(1, n.view());
+        lemma_small_mod(0, n.view());
+    }
+    while !r.eq(W::zero())
+        invariant
+            n.view() > 1,
+            gcd_spec(old_r.view(), r.view()) == 1,
+            old_r.view() as int == old_x * a.view() + old_y * n.view(),
+            r.view() as int == x * a.view() + y * n.view(),
+            old_s.view() as int == old_x % (n.view() as int),
+            s.view() as int == x % (n.view() as int),
+            old_s.view() < n.view(), s.view() < n.view(),
+        decreases r.view(),
+    {
+        let q = old_r.udiv(r);
+        let next_r = old_r.urem(r);
+        let product = q.mulmod(s, n);
+        proof { lemma_mod_bound((q.view() * s.view()) as int, n.view() as int); }
+        let next_s = submod(old_s, product, n);
+        let ghost next_x = old_x - q.view() * x;
+        let ghost next_y = old_y - q.view() * y;
+        proof {
+            lemma_fundamental_div_mod(old_r.view() as int, r.view() as int);
+            lemma_mod_bound(old_r.view() as int, r.view() as int);
+            assert(next_r.view() as int == next_x * a.view() + next_y * n.view()) by (nonlinear_arith)
+                requires
+                    old_r.view() as int == old_x * a.view() + old_y * n.view(),
+                    r.view() as int == x * a.view() + y * n.view(),
+                    old_r.view() == q.view() * r.view() + next_r.view(),
+                    next_x == old_x - q.view() * x, next_y == old_y - q.view() * y;
+            lemma_mul_mod_noop_right(q.view() as int, x, n.view() as int);
+            lemma_sub_mod_noop(old_x, q.view() * x, n.view() as int);
+            lemma_sub_mod_noop(old_s.view() as int, product.view() as int, n.view() as int);
+            lemma_small_mod(old_s.view(), n.view());
+            lemma_small_mod(product.view(), n.view());
+        }
+        old_r = r;
+        r = next_r;
+        old_s = s;
+        s = next_s;
+        proof { old_x = x; x = next_x; old_y = y; y = next_y; }
+    }
+    proof {
+        assert(old_r.view() == 1);
+        assert(old_x * a.view() == 1 + n.view() * (-old_y)) by (nonlinear_arith)
+            requires 1 == old_x * a.view() + old_y * n.view();
+        congruence_shift(old_x * a.view(), 1, n.view() as int, -old_y);
+        lemma_mul_mod_noop_left(old_x, a.view() as int, n.view() as int);
+    }
+    old_s
+}
+
+/// Recover an exact mathematical Bézout witness from a modular inverse.
+proof fn inverse_bezout(a: nat, n: nat, s: nat) -> (t: int)
+    requires n > 0, (s * a) % n == 1nat % n,
+    ensures s * a + t * n == 1,
+{
+    lemma_mod_equivalence(1, (s * a) as int, n as int);
+    lemma_fundamental_div_mod(1 - s * a, n as int);
+    (1 - s * a) / (n as int)
+}
+
 /// Exact CRT over representable words. Moduli MUST be positive.
 /// Congruence's modulus-zero constants must be handled by callers first.
 pub fn crt_merge<W: Word>(m1: W, r1: W, m2: W, r2: W) -> (result: CrtMergeResult<W>)
@@ -1367,60 +950,207 @@ pub fn crt_merge<W: Word>(m1: W, r1: W, m2: W, r2: W) -> (result: CrtMergeResult
         forall|x: W| #[trigger] result.has(x) <==>
             is_common_congruence_solution(x.view() as int, m1.view(), r1.view(), m2.view(), r2.view()),
 {
-    let wide = crt_wide(m1.to_u64(), r1.to_u64(), m2.to_u64(), r2.to_u64());
-    let max = W::max().to_u64();
-    match wide {
-        None => CrtMergeResult::Empty,
-        Some((m, r)) => {
-            let result = if r > max as u128 {
-                CrtMergeResult::Empty
-            } else if m > (max as u128) - r {
-                let value = W::from_u64(r as u64);
-                CrtMergeResult::Singleton { value }
-            } else {
-                CrtMergeResult::Class {
-                    modulus: W::from_u64(m as u64),
-                    residue: W::from_u64(r as u64),
-                }
-            };
-            proof {
-                assert forall|x: W| #[trigger] result.has(x) <==>
-                    is_common_congruence_solution(x.view() as int, m1.view(), r1.view(), m2.view(), r2.view()) by {
-                    x.lemma_view_bounded();
-                    lemma_class_member(x.view(), m as nat, r as nat);
-                    match result {
-                        CrtMergeResult::Singleton { value } => {
-                            W::lemma_view_injective(x, value);
-                            lemma_small_mod(r as nat, m as nat);
-                        },
-                        _ => {},
-                    }
-                }
+    let a1 = r1.urem(m1);
+    let a2 = r2.urem(m2);
+    let g = gcd(m1, m2);
+    proof {
+        lemma_mod_bound(r1.view() as int, m1.view() as int);
+        lemma_mod_bound(r2.view() as int, m2.view() as int);
+        lemma_small_mod(a1.view(), m1.view());
+        lemma_small_mod(a2.view(), m2.view());
+    }
+    if !a1.urem(g).eq(a2.urem(g)) {
+        proof {
+            crt_incompatible_no_solution(g.view(), m1.view(), a1.view(), m2.view(), a2.view());
+            assert forall|x: W| !#[trigger] is_common_congruence_solution(
+                x.view() as int, m1.view(), r1.view(), m2.view(), r2.view()) by {
+                assert(!is_common_congruence_solution(x.view() as int, m1.view(), a1.view(), m2.view(), a2.view()));
             }
-            result
+        }
+        return CrtMergeResult::Empty;
+    }
+    let p = m1.udiv(g);
+    let n = m2.udiv(g);
+    proof {
+        positive_exact_quotient(m1.view(), g.view());
+        positive_exact_quotient(m2.view(), g.view());
+        lemma_gcd_reduced(m1.view(), m2.view());
+    }
+    let s = inverse_mod(p, n);
+    let ghost t = inverse_bezout(p.view(), n.view(), s.view());
+    let q1 = a1.udiv(g).urem(n);
+    let q2 = a2.udiv(g).urem(n);
+    proof {
+        lemma_mod_bound((a1.view() / g.view()) as int, n.view() as int);
+        lemma_mod_bound((a2.view() / g.view()) as int, n.view() as int);
+    }
+    let delta = submod(q2, q1, n);
+    let k = delta.mulmod(s, n);
+    let ghost lcm = p.view() * m2.view();
+    let ghost candidate = a1.view() + m1.view() * k.view();
+    proof {
+        lemma_fundamental_div_mod(m1.view() as int, g.view() as int);
+        lemma_fundamental_div_mod(m2.view() as int, g.view() as int);
+        assert(s.view() * m1.view() + t * m2.view() == g.view()) by (nonlinear_arith)
+            requires m1.view() == g.view() * p.view(), m2.view() == g.view() * n.view(),
+                s.view() * p.view() + t * n.view() == 1;
+        assert(is_extended_gcd(g.view(), s.view() as int, t, m1.view(), m2.view()));
+        lemma_mod_bound((delta.view() * s.view()) as int, n.view() as int);
+        lemma_sub_mod_noop((a2.view() / g.view()) as int, (a1.view() / g.view()) as int, n.view() as int);
+        lemma_mul_mod_noop_left((a2.view() / g.view()) as int - (a1.view() / g.view()) as int,
+            s.view() as int, n.view() as int);
+        lemma_small_mod(k.view(), n.view());
+        crt_candidate_solution(m1.view() as int, a1.view() as int, m2.view() as int, a2.view() as int,
+            g.view() as int, s.view() as int, t, k.view() as int);
+        assert(lcm == m1.view() * n.view()) by (nonlinear_arith)
+            requires m1.view() == g.view() * p.view(), m2.view() == g.view() * n.view(), lcm == p.view() * m2.view();
+        assert(0 < lcm && candidate < lcm) by (nonlinear_arith)
+            requires m1.view() > 0, n.view() > 0, a1.view() < m1.view(), k.view() < n.view(),
+                candidate == a1.view() + m1.view() * k.view(), lcm == m1.view() * n.view();
+        assert forall|x: W| #[trigger] is_common_congruence_solution(x.view() as int, m1.view(), r1.view(), m2.view(), r2.view())
+            <==> x.view() % lcm == candidate by {
+            crt_solution_class_exact(x.view() as int, candidate, m1.view(), r1.view(), m2.view(), r2.view(),
+                g.view(), s.view() as int, t);
+        }
+    }
+    let modulus = p.checked_mul(m2);
+    let term = m1.checked_mul(k);
+    let residue = match term { Some(term) => term.checked_add(a1), None => None };
+    let result = match residue {
+        None => CrtMergeResult::Empty,
+        Some(residue) => match modulus {
+            None => CrtMergeResult::Singleton { value: residue },
+            Some(modulus) => match residue.checked_add(modulus) {
+                None => CrtMergeResult::Singleton { value: residue },
+                Some(next) => { proof { next.lemma_view_bounded(); } CrtMergeResult::Class { modulus, residue } },
+            },
         },
+    };
+    proof {
+        assert forall|x: W| #[trigger] result.has(x) <==>
+            is_common_congruence_solution(x.view() as int, m1.view(), r1.view(), m2.view(), r2.view()) by {
+            x.lemma_view_bounded();
+            lemma_class_member(x.view(), lcm, candidate);
+            match result {
+                CrtMergeResult::Singleton { value } => {
+                    W::lemma_view_injective(x, value);
+                    lemma_small_mod(candidate, lcm);
+                },
+                _ => {},
+            }
+        }
+    }
+    result
+}
+
+/// An odd number is coprime with every power of two. These coefficients
+/// exist only in proofs; no signed or widened arithmetic is executed.
+proof fn odd_pow2_bezout(a: nat, bits: nat) -> (witness: (int, int))
+    requires a % 2 == 1,
+    ensures witness.0 * a + witness.1 * pow2(bits) == 1,
+    decreases bits,
+{
+    if bits == 0 {
+        vstd::arithmetic::power::lemma_pow0(2);
+        (0, 1)
+    } else {
+        let (s, t) = odd_pow2_bezout(a, (bits - 1) as nat);
+        let p = pow2((bits - 1) as nat);
+        lemma_pow2_unfold(bits);
+        lemma_fundamental_div_mod(t, 2);
+        if t % 2 == 0 {
+            assert(s * a + (t / 2) * pow2(bits) == 1) by (nonlinear_arith)
+                requires s * a + t * p == 1, pow2(bits) == 2 * p, t == 2 * (t / 2);
+            (s, t / 2)
+        } else {
+            lemma_mod_bound(t, 2);
+            lemma_sub_mod_noop(t, a as int, 2);
+            lemma_fundamental_div_mod(t - a, 2);
+            assert((s + p) * a + ((t - a) / 2) * pow2(bits) == 1) by (nonlinear_arith)
+                requires s * a + t * p == 1, pow2(bits) == 2 * p, t - a == 2 * ((t - a) / 2);
+            (s + p, (t - a) / 2)
+        }
     }
 }
 
-/// GCD for widened products and for the machine modulus (which may be 2^64).
-pub fn gcd_wide(a: u128, b: u128) -> (r: u128)
-    ensures r as nat == gcd_spec(a as nat, b as nat),
-        is_gcd(r as nat, a as nat, b as nat),
-    decreases b,
+/// The Word valuation contract determines the exact mathematical GCD.
+pub proof fn lemma_gcd_pow2(m: nat, bits: nat, exponent: nat)
+    requires
+        exponent <= bits,
+        m == 0 ==> exponent == bits,
+        m != 0 ==> crate::word::tz_spec(m, exponent),
+    ensures gcd_spec(m, pow2(bits)) == pow2(exponent),
 {
-    proof { lemma_gcd_spec(a as nat, b as nat); }
-    if b == 0 { a } else { gcd_wide(b, a % b) }
+    lemma_pow2_pos(bits);
+    lemma_pow2_pos(exponent);
+    if m == 0 {
+        lemma_gcd_symmetric(m, pow2(bits));
+    } else {
+        let p = pow2(exponent);
+        let q = m / p;
+        let k = (bits - exponent) as nat;
+        lemma_pow2_adds(exponent, k);
+        lemma_fundamental_div_mod(m as int, p as int);
+        let (s, t) = odd_pow2_bezout(q, k);
+        assert(s * m + t * pow2(bits) == p) by (nonlinear_arith)
+            requires m == q * p, pow2(bits) == p * pow2(k), s * q + t * pow2(k) == 1;
+        lemma_mod_multiples_basic(pow2(k) as int, p as int);
+        assert(pow2(bits) == pow2(k) * p) by (nonlinear_arith)
+            requires pow2(bits) == p * pow2(k);
+        lemma_gcd_spec(m, pow2(bits));
+        let g = gcd_spec(m, pow2(bits));
+        assert(is_common_divisor(p, m, pow2(bits)));
+        lemma_fundamental_div_mod(m as int, g as int);
+        lemma_fundamental_div_mod(pow2(bits) as int, g as int);
+        let h = s * (m / g) + t * (pow2(bits) / g);
+        assert(p == h * g) by (nonlinear_arith)
+            requires s * m + t * pow2(bits) == p,
+                m == g * (m / g), pow2(bits) == g * (pow2(bits) / g),
+                h == s * (m / g) + t * (pow2(bits) / g);
+        lemma_mod_multiples_basic(h, g as int);
+        assert(g <= p) by (nonlinear_arith) requires p > 0, g > 0, p % g == 0;
+    }
 }
 
-/// The step that is preserved by reduction modulo the machine modulus.
-/// The result is wide because gcd(0, 2^64) = 2^64.
-pub fn gcd_machine_modulus<W: Word>(m: W) -> (r: u128)
-    ensures r as nat == gcd_spec(m.view(), W::modulus()), r > 0,
-        m.view() % (r as nat) == 0, W::modulus() % (r as nat) == 0,
+/// Exact GCD with 2^bits, represented by its exponent. This is total:
+/// zero returns `bits`, representing 2^bits mathematically, never as a W.
+pub fn gcd_machine_modulus_exponent<W: Word>(m: W) -> (exponent: u32)
+    ensures
+        exponent as nat <= W::bits(),
+        pow2(exponent as nat) == gcd_spec(m.view(), W::modulus()),
+        m.view() == 0 ==> exponent as nat == W::bits(),
+        m.view() != 0 ==> (exponent as nat) < W::bits(),
+        m.view() % pow2(exponent as nat) == 0,
+        W::modulus() % pow2(exponent as nat) == 0,
 {
-    let max = W::max().to_u64();
-    let modulus = max as u128 + 1;
-    gcd_wide(m.to_u64() as u128, modulus)
+    let exponent = m.trailing_zeros();
+    proof {
+        W::lemma_modulus();
+        lemma_gcd_pow2(m.view(), W::bits(), exponent as nat);
+        lemma_gcd_spec(m.view(), W::modulus());
+    }
+    exponent
+}
+
+/// For a nonzero word the GCD with the machine modulus is representable.
+/// Zero must use `gcd_machine_modulus_exponent`: its GCD is 2^bits, not a word.
+pub fn gcd_machine_modulus<W: Word>(m: W) -> (r: W)
+    requires m.view() > 0,
+    ensures r.view() == gcd_spec(m.view(), W::modulus()), r.view() > 0,
+        m.view() % r.view() == 0, W::modulus() % r.view() == 0,
+{
+    let complement = m.neg_nonzero();
+    let r = gcd(m, complement);
+    proof {
+        W::lemma_modulus();
+        m.lemma_view_bounded();
+        lemma_gcd_symmetric(m.view(), W::modulus());
+        lemma_gcd_symmetric(m.view(), complement.view());
+        lemma_mod_sub_multiples_vanish(W::modulus() as int, m.view() as int);
+        assert(gcd_spec(W::modulus(), m.view()) == gcd_spec(complement.view(), m.view()));
+        lemma_gcd_spec(m.view(), W::modulus());
+    }
+    r
 }
 
 /// Wrapping preserves congruence modulo gcd(m, 2^N), for negative integers too.
@@ -1441,30 +1171,6 @@ pub proof fn lemma_wrapping_congruence<W: Word>(m: nat, x: int)
     assert(x == x % n + g * (k * q)) by (nonlinear_arith)
         requires x == n * q + x % n, n == g * k;
     congruence_shift(x, x % n, g, k * q);
-}
-
-/// Exact native-word product, widened before multiplication.
-pub fn mul_wide<W: Word>(a: W, b: W) -> (r: u128)
-    ensures r as nat == a.view() * b.view(),
-{
-    let aw = a.to_u64() as u128;
-    let bw = b.to_u64() as u128;
-    proof {
-        assert(aw * bw <= u128::MAX) by (nonlinear_arith)
-            requires aw <= u64::MAX, bw <= u64::MAX;
-    }
-    aw * bw
-}
-
-/// Shared widened Granger modulus foundation. This computes only the modulus;
-/// it does not implement multiplication or wrapping of any abstract domain.
-pub fn granger_modulus<W: Word>(m1: W, r1: W, m2: W, r2: W) -> (r: u128)
-    ensures r as nat == gcd_spec(gcd_spec(m1.view() * m2.view(), m1.view() * r2.view()), m2.view() * r1.view()),
-{
-    let mm = mul_wide(m1, m2);
-    let mr = mul_wide(m1, r2);
-    let rm = mul_wide(m2, r1);
-    gcd_wide(gcd_wide(mm, mr), rm)
 }
 
 } // verus!

@@ -182,7 +182,7 @@ concretization.
 **`Congruence<W>`** (`congruence.rs`, PR #106) currently supplies the semantic
 core only: private canonical fields, `wf`, unsigned `gamma`/`has`, executable
 membership, normalized constructors, and inherent `lemma_nonempty` and
-`lemma_canonical` with the same obligations as `Domain`. A progression must
+`lemma_canonical` with the same obligations as `Canonical`. A progression must
 have at least two representable members; otherwise it normalizes to a
 singleton. `tests/congruence.rs` exhaustively checks the real u8 implementation.
 Its full `impl Domain` is deferred to #114 because this trait requires
