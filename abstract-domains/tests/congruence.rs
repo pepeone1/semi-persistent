@@ -1,6 +1,6 @@
 // Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
-//! Exhaustive oracle for the real executable Congruence<u8>.
+//! Exhaustive u8 oracles, small-model lattice checks, and width regressions.
 use semi_persistent_abstract_domains::congruence::Congruence;
 use semi_persistent_abstract_domains::lattice::Domain;
 use semi_persistent_abstract_domains::semantics::Unsigned;
@@ -856,7 +856,7 @@ fn lifted_parts(c: &BotOr<C>) -> Option<(u8, u8)> {
 // Exhaustive Cartesian small-input model, with the *entire* concrete u8
 // universe retained so overflow/underflow cannot hide outside a sample window.
 #[test]
-fn exhaustive_small_model_transfers_and_lattice_laws() {
+fn small_model_transfers_and_lattice_laws() {
     let mut inputs = Vec::new();
     for m in 0..=8 {
         for r in 0..=8 {

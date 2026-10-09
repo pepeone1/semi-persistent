@@ -161,8 +161,8 @@ Downstream coordination:
 
 - #114 now consumes the same-width helpers directly, preserves #106's latest
   contracts and public lemmas, and implements uniform-wrap precision as below.
-- #118 must rebase onto updated #114 and reconcile its tests with the expanded
-  suite; its temporary `Word64` workaround is no longer needed.
+- #118 builds on updated #114, retains the expanded tests, and uses `Word`
+  directly in its lattice-law harnesses.
 - #124's StridedInterval code uses the unchanged `gcd`, `crt_merge`, and
   `CrtMergeResult` APIs. Its inherited arithmetic implementation, helper tests,
   and documentation must be reconciled with this version when rebasing.
@@ -294,14 +294,15 @@ not yet prove the termination bound for join-based widening.
 
 `src/congruence_laws.rs` verifies structural idempotence, commutativity,
 associativity, top/bottom identity and absorption for meet and join (ten laws).
-The generic verification harnesses call existing Congruence operations and
-specialize the existing bottom-lifting cases to retain exact intersection and
+The private generic verification harnesses include a u128 instance. They call
+existing Congruence operations through local copies of the `BotOr` meet/join
+cases in `lattice.rs` to retain exact intersection and
 LUB contracts, which the general `Domain` interface intentionally does not
 require. Canonical uniqueness lifts semantic equality to structural equality;
 nonemptiness distinguishes values from bottom. No arithmetic algorithms,
 existing contracts, or trust assumptions are changed.
 
-The continuous small-model oracle enumerates all 81 raw descriptions with
+The `small_model_transfers_and_lattice_laws` oracle enumerates all 81 raw descriptions with
 modulus/residue in `0..=8`, all 6,561 ordered input pairs, and all 256 concrete
 u8 values (including wrapping results). It checks canonicalization, exact
 refinement/intersection, join/widen containment, and add/sub/neg containment

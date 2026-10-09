@@ -1,7 +1,8 @@
 // Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 //! Lattice-law verification harnesses for canonical congruences, including bottom.
-//! These call the existing operations; no arithmetic implementation is duplicated.
+//! Local bottom lifting calls the existing Congruence operations; no arithmetic
+//! implementation is duplicated.
 #![allow(unused_imports, unused_variables)]
 use crate::congruence::Congruence;
 use crate::lattice::{BotOr, Domain};
@@ -38,8 +39,8 @@ proof fn canonical<W: Word>(a: &C<W>, b: &C<W>)
     }
 }
 
-// Specialize the existing bottom lifting so the stronger Congruence contracts
-// remain visible. The generic Domain interface intentionally allows inexactness.
+// Local copy of BotOr::meet in lattice.rs: call Congruence::meet directly to
+// retain exact intersection. The generic Domain contract allows inexactness.
 fn meet<W: Word>(a: &C<W>, b: &C<W>) -> (r: C<W>)
     requires a.wf(), b.wf(),
     ensures r.wf(), forall|x: W| #[trigger] r.gamma(x) == (a.gamma(x) && b.gamma(x)),
@@ -63,6 +64,8 @@ fn meet<W: Word>(a: &C<W>, b: &C<W>) -> (r: C<W>)
     }
 }
 
+// Local copy of BotOr::join in lattice.rs: call Congruence::join directly to
+// retain its least-upper-bound contract, absent from the generic Domain interface.
 fn join<W: Word>(a: &C<W>, b: &C<W>) -> (r: C<W>)
     requires a.wf(), b.wf(),
     ensures r.wf(), subset(a, &r), subset(b, &r),
@@ -111,7 +114,8 @@ fn join<W: Word>(a: &C<W>, b: &C<W>) -> (r: C<W>)
 
 /// Verifies structural equality for all five meet laws, for arbitrary words
 /// and arbitrary well-formed operands (including bottom).
-pub fn verify_meet_laws<W: Word>(a: &C<W>, b: &C<W>, c: &C<W>)
+#[allow(dead_code)] // Verification harness, not a runtime API.
+fn verify_meet_laws<W: Word>(a: &C<W>, b: &C<W>, c: &C<W>)
     requires a.wf(), b.wf(), c.wf(),
 {
     let aa = meet(a, a);
@@ -140,7 +144,8 @@ pub fn verify_meet_laws<W: Word>(a: &C<W>, b: &C<W>, c: &C<W>)
 
 /// Verifies structural equality for all five join laws from the existing LUB
 /// contract, without assuming that join is exact set union.
-pub fn verify_join_laws<W: Word>(a: &C<W>, b: &C<W>, c: &C<W>)
+#[allow(dead_code)] // Verification harness, not a runtime API.
+fn verify_join_laws<W: Word>(a: &C<W>, b: &C<W>, c: &C<W>)
     requires a.wf(), b.wf(), c.wf(),
 {
     let aa = join(a, a);
@@ -171,5 +176,13 @@ pub fn verify_join_laws<W: Word>(a: &C<W>, b: &C<W>, c: &C<W>)
         canonical(&az, a);
         assert(az == *a); // bottom identity
     }
+}
+// Instantiate both generic harnesses at the widest supported Word.
+#[allow(dead_code)]
+fn verify_u128_laws(a: &C<u128>, b: &C<u128>, c: &C<u128>)
+    requires a.wf(), b.wf(), c.wf(),
+{
+    verify_meet_laws(a, b, c);
+    verify_join_laws(a, b, c);
 }
 } // verus!
