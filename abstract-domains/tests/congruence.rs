@@ -163,11 +163,11 @@ macro_rules! core_cases {
 
             for m in [0, 1, 2, max] {
                 for r in [0, 1, max] {
-                    let normalized = C::new(m, r).normalize();
+                    let normalized = C::new(m, r);
                     let nr = if m == 0 { r } else { r % m };
                     let nm = if m != 0 && m > max - nr { 0 } else { m };
                     assert_eq!(normalized.parts(), (nm, nr));
-                    let twice = normalized.normalize();
+                    let twice = C::new(nm, nr);
                     assert_eq!(twice.parts(), normalized.parts());
                     for x in [0, 1, 2, max - 1, max] {
                         assert_eq!(
@@ -193,7 +193,7 @@ fn refinement_matches_finite_u8_sets() {
     let mut classes = Vec::new();
     for m in [0, 1, 2, 3, 4, 127, 128, 129, 200, 254, 255] {
         for r in [0, 1, 2, 100, 127, 128, 200, 254, 255] {
-            let c = C::new(m, r).normalize();
+            let c = C::new(m, r);
             let values: Vec<bool> = (0..=u8::MAX)
                 .map(|x| if m == 0 { x == r } else { x % m == r % m })
                 .collect();
@@ -283,7 +283,7 @@ fn meet_matches_finite_u8_sets() {
     let mut classes = Vec::new();
     for m in [0, 1, 2, 3, 4, 127, 128, 129, 200, 254, 255] {
         for r in [0, 1, 2, 100, 127, 128, 200, 254, 255] {
-            let c = C::new(m, r).normalize();
+            let c = C::new(m, r);
             let values: Vec<bool> = (0..=u8::MAX)
                 .map(|x| if m == 0 { x == r } else { x % m == r % m })
                 .collect();
@@ -371,7 +371,7 @@ fn join_covers_finite_u8_sets() {
     let mut classes = Vec::new();
     for m in [0, 1, 2, 3, 4, 127, 128, 129, 200, 254, 255] {
         for r in [0, 1, 2, 100, 127, 128, 200, 254, 255] {
-            let c = C::new(m, r).normalize();
+            let c = C::new(m, r);
             let values: Vec<bool> = (0..=u8::MAX)
                 .map(|x| if m == 0 { x == r } else { x % m == r % m })
                 .collect();
@@ -451,7 +451,7 @@ fn addition_covers_finite_u8_sums() {
     let mut classes = Vec::new();
     for m in [0, 1, 2, 3, 4, 127, 128, 129, 200, 254, 255] {
         for r in [0, 1, 2, 100, 127, 128, 200, 254, 255] {
-            let c = C::new(m, r).normalize();
+            let c = C::new(m, r);
             let values: Vec<u8> = (0..=u8::MAX)
                 .filter(|x| if m == 0 { *x == r } else { x % m == r % m })
                 .collect();
@@ -697,4 +697,148 @@ fn trait_operations_against_finite_sets_and_all_canonical_upper_bounds() {
             }
         }
     }
+}
+
+core_cases!(core_u128, d128, u128);
+meet_cases!(meet_u128, d128, u128);
+join_cases!(join_u128, d128, u128);
+add_cases!(add_u128, d128, u128);
+trait_cases!(traits_u128, u128);
+
+#[test]
+fn wrapping_precision_regressions() {
+    // Every nonzero member wraps in the same direction under negation.
+    assert_eq!(C::new(3, 1).neg().parts(), (3, 0));
+    assert_eq!(C::new(5, 3).neg().parts(), (5, 3));
+    assert_eq!(C::new(3, 1).sub(&C::constant(1)).parts(), (3, 0));
+    assert_eq!(C::constant(0).sub(&C::new(3, 1)).parts(), (3, 0));
+    assert_eq!(C::new(3, 1).add(&C::constant(255)).parts(), (3, 0));
+    assert_eq!(C::new(5, 3).add(&C::constant(255)).parts(), (5, 2));
+    // Zero itself must not be mistaken for a wrapping negative input.
+    assert_eq!(C::constant(0).neg().parts(), (0, 0));
+    assert_eq!(C::new(3, 0).neg().parts(), (1, 0));
+    assert_eq!(C::new(3, 0).add(&C::constant(1)).parts(), (1, 0));
+}
+
+fn concrete_hull(values: impl IntoIterator<Item = u8>) -> (u8, u8) {
+    let mut values = values.into_iter();
+    let first = values.next().unwrap();
+    let mut stride = 0;
+    for x in values {
+        let mut delta = x.abs_diff(first);
+        while delta != 0 {
+            (stride, delta) = (delta, stride % delta);
+        }
+    }
+    (stride, if stride == 0 { first } else { first % stride })
+}
+
+#[test]
+fn exhaustive_u8_nonzero_negation_precision() {
+    for (a, bits) in canonical_classes() {
+        if !a.contains(0) {
+            assert_eq!(
+                a.neg().parts(),
+                concrete_hull(members(&bits).map(u8::wrapping_neg)),
+                "neg {:?}",
+                a.parts()
+            );
+        }
+    }
+}
+
+#[test]
+fn exhaustive_u8_classes_with_every_constant_arithmetic() {
+    // All 16,640 canonical u8 classes x all 256 constants, in both subtraction
+    // orders. This covers every concrete member, not just endpoints.
+    for (a, bits) in canonical_classes() {
+        let values: Vec<_> = members(&bits).collect();
+        let first = values[0];
+        let last = *values.last().unwrap();
+        for y in 0..=u8::MAX {
+            let b = C::constant(y);
+            let sum = a.add(&b);
+            let difference = a.sub(&b);
+            let reverse = b.sub(&a);
+            check_wf(&sum);
+            check_wf(&difference);
+            check_wf(&reverse);
+            assert_eq!(sum.parts(), b.add(&a).parts());
+            for &x in &values {
+                assert!(
+                    sum.contains(x.wrapping_add(y)),
+                    "{:?} + {y}: {x}",
+                    a.parts()
+                );
+                assert!(
+                    difference.contains(x.wrapping_sub(y)),
+                    "{:?} - {y}: {x}",
+                    a.parts()
+                );
+                assert!(
+                    reverse.contains(y.wrapping_sub(x)),
+                    "{y} - {:?}: {x}",
+                    a.parts()
+                );
+            }
+            // When the concrete range stays on one side of the boundary,
+            // compare precision against an independent best-class oracle.
+            if last.checked_add(y).is_some() || first.checked_add(y).is_none() {
+                assert_eq!(
+                    sum.parts(),
+                    concrete_hull(values.iter().map(|x| x.wrapping_add(y)))
+                );
+            }
+            if first >= y || last < y {
+                assert_eq!(
+                    difference.parts(),
+                    concrete_hull(values.iter().map(|x| x.wrapping_sub(y)))
+                );
+            }
+            if y >= last || y < first {
+                assert_eq!(
+                    reverse.parts(),
+                    concrete_hull(values.iter().map(|x| y.wrapping_sub(*x)))
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn u128_arithmetic_boundaries_and_precision() {
+    type C128 = Congruence<u128>;
+    let max = u128::MAX;
+    let half = 1u128 << 127;
+    for x in [0, 1, 255, 1u128 << 64, half - 1, half, max - 1, max] {
+        let a = C128::constant(x);
+        assert_eq!(
+            <C128 as Arith<Unsigned<u128>>>::neg(&a).parts(),
+            (0, x.wrapping_neg())
+        );
+        for y in [0, 1, 1u128 << 64, half, max] {
+            let b = C128::constant(y);
+            assert_eq!(
+                <C128 as Arith<Unsigned<u128>>>::add(&a, &b).parts(),
+                (0, x.wrapping_add(y))
+            );
+            assert_eq!(
+                <C128 as Arith<Unsigned<u128>>>::sub(&a, &b).parts(),
+                (0, x.wrapping_sub(y))
+            );
+        }
+    }
+    assert_eq!(C128::new(3, 1).neg().parts(), (3, 0));
+    assert_eq!(C128::new(3, 1).add(&C128::constant(max)).parts(), (3, 0));
+    assert_eq!(C128::new(3, 1).sub(&C128::constant(1)).parts(), (3, 0));
+    assert_eq!(C128::new(half, 0).max_member(), half);
+    assert_eq!(
+        C128::new(half, 0).add(&C128::new(half, 0)).parts(),
+        (half, 0)
+    );
+    assert_eq!(
+        C128::new(half, 0).sub(&C128::new(half, 0)).parts(),
+        (half, 0)
+    );
+    assert_eq!(C128::new(half, 0).neg().parts(), (half, 0));
 }

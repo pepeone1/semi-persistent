@@ -79,8 +79,9 @@ bitvector obligations exceed current solver capacity):
 - **Interval**: `[lo, hi]` bounds tracking.
 - **Congruence<W>** (`congruence.rs`): generic canonical finite-word classes,
   exact refinement/meet, least-upper-bound join, join-based widen, and
-  `Arith<Unsigned<W>>` add/sub/neg. No-wrap addition retains the stride GCD;
-  wrapping cases use the shared machine-modulus GCD. Empty meet is `BotOr::Bot`.
+  `Arith<Unsigned<W>>` add/sub/neg for u8 through u128. Uniform-wrap arithmetic
+  retains the stride GCD; mixed wrapping uses the machine-modulus GCD.
+  Constants have proved exactness contracts. Empty meet is `BotOr::Bot`.
 
 These domains combine through `reduce::Product` and the fact records (see
 [the reduced-product note](doc/reduced-product.md)) once they implement

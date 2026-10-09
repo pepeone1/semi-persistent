@@ -159,19 +159,17 @@ including `is_extended_gcd` and `crt_solution_class_exact`, remain available.
 
 Downstream coordination:
 
-- #114 must consume the nonzero machine-modulus helper's `W` result directly,
-  remove its conversion bridges, and prove the nonzero precondition. Zero is
-  represented through the exponent helper when needed. Congruence migration,
-  the CRT trigger improvement and uniform-wrap work remain in #114.
-- #118 must rebase onto updated #114, remove its temporary `Word64` trait and
-  bounds, and add `Congruence<u128>` regressions.
+- #114 now consumes the same-width helpers directly, preserves #106's latest
+  contracts and public lemmas, and implements uniform-wrap precision as below.
+- #118 must rebase onto updated #114 and reconcile its tests with the expanded
+  suite; its temporary `Word64` workaround is no longer needed.
 - #124's StridedInterval code uses the unchanged `gcd`, `crt_merge`, and
   `CrtMergeResult` APIs. Its inherited arithmetic implementation, helper tests,
   and documentation must be reconciled with this version when rebasing.
 
-No Congruence domain migration, multiplication transfer, or reduced-product
-integration is implemented here. No proof bypasses or new trusted items were
-introduced.
+The shared-helper change adds no multiplication transfer or reduced-product
+integration. Unit A integration, `Facts.c`, and grid reduction remain outside
+#114. No proof bypasses or new trusted items were introduced.
 
 ### Congruence
 
@@ -194,7 +192,8 @@ is the integer congruence restricted to the finite unsigned word range.
 Wrapping arithmetic can lose exactness: at u8, adding 1 to `(3, 0)` produces
 `{0, 1, 4, ..., 253}`, since 255 wraps to 0. Any congruence containing both
 0 and 1 is Top, so the best congruence abstraction is Top. A no-wrap condition
-can preserve the integer-congruence precision; arithmetic is outside this PR.
+can preserve the integer-congruence precision; uniform-wrap cases also preserve
+the stride. Mixed-wrap cases can still lose precision as described below.
 
 `new(m, r)` normalizes a raw class: for `m = 0` it denotes `{r}`, otherwise
 it denotes `{x | x % m = r % m}`. The constructor proves preservation of the
@@ -220,10 +219,10 @@ full canonicality so it also applies before singleton collapse.
 `lemma_nonempty` follows from residue membership. `lemma_canonical` proves
 that equal gamma sets of well-formed values imply structural equality: residues are the
 least members, and nonconstant steps are determined by the second members.
-Both use the common `Domain` proof obligations as inherent methods, without
+Both use the common `Canonical` proof obligations as inherent methods, without
 proof bypasses or changes to the trust boundary.
 
-PR #114 implements `Domain<C = W>` and `Arith<Unsigned<W>>` on this carrier.
+PR #114 implements `Domain<C = W>`, `Canonical`, and `Arith<Unsigned<W>>` on this carrier.
 There is no internal bottom: exact meet returns `BotOr::Bot` iff the
 intersection is empty. Positive-modulus inputs use the shared CRT helper;
 constants are handled before calling it. Nonempty results are canonical.
@@ -237,35 +236,56 @@ universe there are finitely many canonical sets, so ascending chains
 stabilize; the interface itself requires only upper-bound soundness.
 
 `max_member` proves membership and an upper bound on every represented word.
-Addition compares the sum of these maxima with `MAX` using u128 intermediates
-(including for u64). If no represented sum can wrap, it keeps `gcd(s1, s2)`;
-otherwise it uses `gcd(gcd(s1, s2), 2^N)`. The shared wrapping lemma proves
-soundness of the latter branch. Both branches use canonical constructors.
-For example, u8 `(129, 0) + (0, 1)` now returns `(129, 1)` rather than top;
-adding `(0, 127)` crosses the wrap boundary and returns top.
+It uses `W::max()`, `wrapping_sub`, and `urem`. Join computes the unsigned
+residue distance in `W`; arithmetic has no widened intermediates or conversion
+bridges and supports `Congruence<u128>`.
 
-Negation applies the shared wrapping lemma to negative integers; subtraction
-composes negation with addition and proves equality with unsigned subtraction
-semantics. Constants are exact. General arithmetic results are proved sound,
-not exact or optimal. Signed instances, multiplication, and division remain
-deferred. Quantified proofs use explicit triggers; #114 adds no trusted items.
+Addition starts with `wrapping_add` and one stride GCD. Its extreme-member
+`checked_add` checks distinguish no wrapping, uniform wrapping, and mixed
+wrapping. Direct subtraction starts with `wrapping_sub`, one stride GCD,
+and corresponding `checked_sub` checks. Uniform cases retain the stride;
+mixed cases use #112's nonzero `gcd_machine_modulus` helper. The zero-stride
+case means both operands are constants and returns before calling that helper;
+there is no attempt to represent the machine modulus as a word. The exponent
+helper remains available for clients needing to represent that zero-input GCD.
+The shared helper performs its own necessary machine-modulus GCD only in the
+mixed case; subtraction does not construct an intermediate abstract negation.
 
-`cargo test --test congruence` passes 31 tests against the real implementation:
+Negation is direct subtraction from zero. When zero is absent, every member
+wraps uniformly and the stride survives. In particular, u8 `neg(3Z+1)` gives
+`3Z`, and `neg(5Z+3)` gives `5Z+3`. The inherent and `Arith<Unsigned<W>>`
+contracts explicitly prove modulus zero and the exact unsigned result residue
+for constant add/sub/neg, in addition to unchanged universal soundness.
+
+This round uses the review's permitted fallback for mixed wrapping. It does
+not implement the full split-range stride algorithm. For example, u8
+`(129, 0) + constant(127)` returns top although `(127, 0)` is the best class;
+`neg((129, 0))` has the same limitation. No general optimality is claimed.
+The rank/stabilization theorem, signed arithmetic instance, and meet containment
+fast path remain permitted follow-ups. Multiplication and division are deferred.
+Quantified proofs use explicit triggers; #114 adds no trusted items.
+
+The Congruence runtime suite checks:
 
 - All 65,536 raw u8 pairs against all 256 words, including normalization,
   nonemptiness, canonical invariants, and unique representation of all 16,640 sets.
-- All 16,640 canonical u8 classes for exact maximum, negation soundness and
-  addition at no-wrap/wrap boundaries, checking every represented member.
-- All 65,536 u8 constant operand pairs for exact add/sub.
-- A 99-description boundary-focused input family for exact refinement/meet,
+- All 16,640 canonical u8 classes for exact maximum, negation soundness,
+  and optimal negation when zero is absent.
+- All 65,536 u8 constant operand pairs for exact add/sub, and all constants
+  for exact negation in the unary oracle.
+- All 16,640 canonical classes against all 256 constants (4,259,840 pairs),
+  checking every concrete member for add and both subtraction orders, and
+  comparing uniform-wrap precision against an independent best-class oracle.
+- A 99-description boundary-focused family for exact refinement/meet,
   LUB join against **all 16,640 possible canonical upper bounds**, widen,
-  and add/sub over every represented concrete operand pair. This is not an
-  exhaustive test of all pairs of canonical abstract inputs.
-- Trait and inherent API regressions at u8/u16/u32/u64, external Bottom,
-  constants/top, singleton collapse, CRT outcomes and legacy aliases.
+  and add/sub over every concrete operand pair. This does not enumerate all
+  pairs of nonconstant canonical abstract inputs.
+- Trait and inherent API regressions at u8/u16/u32/u64/u128, external Bottom,
+  constants/top, singleton collapse, CRT outcomes, and existing width aliases.
+  u128 arithmetic tests include bit 64, bit 127, MAX, zero, and wrapping.
 
 Verification uses the repository-pinned Verus
 `0.2026.09.20.aef82ed`, matching the pinned `vstd` dependency.
 
-The finite-height/rank theorem remains future lattice work; this semantic core
-does not yet prove the termination bound for join-based widening.
+The finite-height/rank theorem remains future lattice work; this domain does
+not yet prove the termination bound for join-based widening.

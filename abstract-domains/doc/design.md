@@ -337,10 +337,12 @@ Congruence uses private canonical finite-word classes and external `BotOr` for
 empty intersections. Its meet delegates positive-modulus inputs to the shared
 CRT helper. The first two members characterize stride divisibility, which
 proves the GCD join is below every common upper bound. Addition uses proved
-maximum members to choose `gcd(s1, s2)` when every sum fits, and includes the
-machine modulus when wrapping is possible. Negation uses the shared wrapping
-congruence lemma; subtraction composes negation and addition. These transfers
-prove containment, not general exactness. Signed transfer instances,
+extreme members to preserve `gcd(s1, s2)` when all sums or differences lie
+in one wrapping segment. Only mixed wrapping includes the machine modulus.
+Subtraction is direct; negation subtracts from zero and preserves the stride
+when zero is absent. Runtime arithmetic uses `W: Word`, including u128.
+Contracts prove containment and constant exactness, not general optimality.
+Full mixed-wrap splitting remains a precision follow-up. Signed transfer instances,
 multiplication, and division are deferred.
 
 Other executable operations currently prove well-formedness only. L2/L3
