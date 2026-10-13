@@ -106,7 +106,7 @@ There is no identity `normalize` method.
 `is_top` and `as_constant` recognize exactly the universal and singleton sets.
 `same` uses two field comparisons and proves both structural and gamma equality.
 
-Public `residue_member` witnesses the residue; `member_decomposition` gives
+Public `lemma_residue_member` witnesses the residue; `lemma_member_decomposition` gives
 its least-member bound, quotient decomposition, and the gap to any later member.
 Public `lemma_second` constructs the representable second member. These methods
 state their contracts with public spec accessors. Public `lemma_next` supplies

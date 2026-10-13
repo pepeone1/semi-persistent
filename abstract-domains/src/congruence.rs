@@ -140,7 +140,7 @@ impl<W: Word> Congruence<W> {
         if self.modulus.eq(W::zero()) { Some(self.residue) }
         else {
             proof {
-                self.residue_member();
+                self.lemma_residue_member();
                 let s = self.lemma_second();
                 assert(self.gamma(s) && s != self.residue());
             }
@@ -183,7 +183,7 @@ impl<W: Word> Congruence<W> {
     }
 
     /// The canonical residue is always a member.
-    pub proof fn residue_member(&self)
+    pub proof fn lemma_residue_member(&self)
         requires self.wf(),
         ensures self.gamma(self.residue()),
     {
@@ -194,11 +194,11 @@ impl<W: Word> Congruence<W> {
         requires self.wf(),
         ensures exists|c: W| self.gamma(c),
     {
-        self.residue_member();
+        self.lemma_residue_member();
     }
 
     /// Decompose a member into the least member plus a nonnegative step count.
-    pub proof fn member_decomposition(&self, x: W)
+    pub proof fn lemma_member_decomposition(&self, x: W)
         requires self.wf(), self.gamma(x),
         ensures self.residue().view() <= x.view(),
             self.modulus().view() == 0 ==> x == self.residue(),
@@ -233,12 +233,12 @@ impl<W: Word> Congruence<W> {
         ensures *a == *b,
     {
         // Equal sets have the same least member, hence the same residue.
-        a.residue_member();
-        b.residue_member();
+        a.lemma_residue_member();
+        b.lemma_residue_member();
         assert(a.gamma(a.residue) && b.gamma(b.residue));
         assert(a.gamma(b.residue) && b.gamma(a.residue));
-        a.member_decomposition(b.residue);
-        b.member_decomposition(a.residue);
+        a.lemma_member_decomposition(b.residue);
+        b.lemma_member_decomposition(a.residue);
         W::lemma_view_injective(a.residue, b.residue);
         // Each nonconstant has a second member. It rules out equality with
         // a singleton and bounds the other progression's step from above.
@@ -246,12 +246,12 @@ impl<W: Word> Congruence<W> {
         if a.modulus.view() > 0 {
             let s = a.lemma_second();
             assert(b.gamma(s));
-            b.member_decomposition(s);
+            b.lemma_member_decomposition(s);
         }
         if b.modulus.view() > 0 {
             let s = b.lemma_second();
             assert(a.gamma(s));
-            a.member_decomposition(s);
+            a.lemma_member_decomposition(s);
         }
         W::lemma_view_injective(a.modulus, b.modulus);
     }
