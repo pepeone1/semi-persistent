@@ -3,16 +3,17 @@
 //! Lattice-law verification harnesses for canonical congruences, including bottom.
 //! Local bottom lifting calls the existing Congruence operations; no arithmetic
 //! implementation is duplicated.
-#![allow(unused_imports, unused_variables)]
 use crate::congruence::Congruence;
-use crate::lattice::{BotOr, Domain};
+use crate::lattice::BotOr;
+#[cfg(verus_keep_ghost)]
+use crate::lattice::Domain;
 use crate::word::Word;
 use vstd::prelude::*;
 
 verus! {
 type C<W> = BotOr<Congruence<W>>;
 
-pub open spec fn subset<W: Word>(a: &C<W>, b: &C<W>) -> bool {
+spec fn subset<W: Word>(a: &C<W>, b: &C<W>) -> bool {
     forall|x: W| #[trigger] a.gamma(x) ==> b.gamma(x)
 }
 
@@ -118,27 +119,27 @@ fn join<W: Word>(a: &C<W>, b: &C<W>) -> (r: C<W>)
 fn verify_meet_laws<W: Word>(a: &C<W>, b: &C<W>, c: &C<W>)
     requires a.wf(), b.wf(), c.wf(),
 {
-    let aa = meet(a, a);
+    let _aa = meet(a, a);
     let ab = meet(a, b);
-    let ba = meet(b, a);
+    let _ba = meet(b, a);
     let bc = meet(b, c);
-    let left = meet(&ab, c);
-    let right = meet(a, &bc);
+    let _left = meet(&ab, c);
+    let _right = meet(a, &bc);
     let top = C::<W>::top();
     let bottom = BotOr::Bot;
-    let at = meet(a, &top);
-    let az = meet(a, &bottom);
+    let _at = meet(a, &top);
+    let _az = meet(a, &bottom);
     proof {
-        canonical(&aa, a);
-        assert(aa == *a); // idempotence
-        canonical(&ab, &ba);
-        assert(ab == ba); // commutativity
-        canonical(&left, &right);
-        assert(left == right); // associativity
-        canonical(&at, a);
-        assert(at == *a); // top identity
-        canonical(&az, &bottom);
-        assert(az == bottom); // bottom absorption
+        canonical(&_aa, a);
+        assert(_aa == *a); // idempotence
+        canonical(&ab, &_ba);
+        assert(ab == _ba); // commutativity
+        canonical(&_left, &_right);
+        assert(_left == _right); // associativity
+        canonical(&_at, a);
+        assert(_at == *a); // top identity
+        canonical(&_az, &bottom);
+        assert(_az == bottom); // bottom absorption
     }
 }
 
@@ -148,41 +149,33 @@ fn verify_meet_laws<W: Word>(a: &C<W>, b: &C<W>, c: &C<W>)
 fn verify_join_laws<W: Word>(a: &C<W>, b: &C<W>, c: &C<W>)
     requires a.wf(), b.wf(), c.wf(),
 {
-    let aa = join(a, a);
+    let _aa = join(a, a);
     let ab = join(a, b);
-    let ba = join(b, a);
+    let _ba = join(b, a);
     let bc = join(b, c);
-    let left = join(&ab, c);
-    let right = join(a, &bc);
+    let _left = join(&ab, c);
+    let _right = join(a, &bc);
     let top = C::<W>::top();
     let bottom = BotOr::Bot;
-    let at = join(a, &top);
-    let az = join(a, &bottom);
+    let _at = join(a, &top);
+    let _az = join(a, &bottom);
     proof {
-        canonical(&aa, a);
-        assert(aa == *a); // idempotence
-        canonical(&ab, &ba);
-        assert(ab == ba); // commutativity
-        assert(subset(a, &right));
-        assert(subset(b, &right));
-        assert(subset(&ab, &right));
-        assert(subset(b, &left));
-        assert(subset(c, &left));
-        assert(subset(&bc, &left));
-        canonical(&left, &right);
-        assert(left == right); // associativity
-        canonical(&at, &top);
-        assert(at == top); // top absorption
-        canonical(&az, a);
-        assert(az == *a); // bottom identity
+        canonical(&_aa, a);
+        assert(_aa == *a); // idempotence
+        canonical(&ab, &_ba);
+        assert(ab == _ba); // commutativity
+        assert(subset(a, &_right));
+        assert(subset(b, &_right));
+        assert(subset(&ab, &_right));
+        assert(subset(b, &_left));
+        assert(subset(c, &_left));
+        assert(subset(&bc, &_left));
+        canonical(&_left, &_right);
+        assert(_left == _right); // associativity
+        canonical(&_at, &top);
+        assert(_at == top); // top absorption
+        canonical(&_az, a);
+        assert(_az == *a); // bottom identity
     }
-}
-// Instantiate both generic harnesses at the widest supported Word.
-#[allow(dead_code)]
-fn verify_u128_laws(a: &C<u128>, b: &C<u128>, c: &C<u128>)
-    requires a.wf(), b.wf(), c.wf(),
-{
-    verify_meet_laws(a, b, c);
-    verify_join_laws(a, b, c);
 }
 } // verus!
