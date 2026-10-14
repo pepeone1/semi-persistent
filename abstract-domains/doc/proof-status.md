@@ -43,7 +43,7 @@ The CRT/helper suite calls the real shared `arithmetic` implementation:
 cargo test --test crt
 ```
 
-Its 12 tests cover all five word widths, GCD properties, machine-modulus GCD
+The tests cover all five word widths, GCD properties, machine-modulus GCD
 values and exponents, and exact finite CRT outcomes. The exhaustive u8 oracle
 precomputes each input class by testing all 256 concrete values, then compares
 bitset intersections against the helper for all 532,701,120 unordered pairs of
@@ -157,19 +157,10 @@ adapted to the retained GCD API and new modular/CRT behavior; tests specific to
 removed widened products were retired. Public ghost/spec Bézout and CRT lemmas,
 including `is_extended_gcd` and `crt_solution_class_exact`, remain available.
 
-Downstream coordination:
-
-- #114 now consumes the same-width helpers directly, preserves #106's latest
-  contracts and public lemmas, and implements uniform-wrap precision as below.
-- #118 must rebase onto updated #114 and reconcile its tests with the expanded
-  suite; its temporary `Word64` workaround is no longer needed.
-- #124's StridedInterval code uses the unchanged `gcd`, `crt_merge`, and
-  `CrtMergeResult` APIs. Its inherited arithmetic implementation, helper tests,
-  and documentation must be reconciled with this version when rebasing.
-
 The shared-helper change adds no multiplication transfer or reduced-product
-integration. Unit A integration, `Facts.c`, and grid reduction remain outside
-#114. No proof bypasses or new trusted items were introduced.
+integration. Unit A integration, `Refine` for Congruence with `Facts.c`, and
+grid reduction remain follow-up work outside #114. No proof bypasses or new
+trusted items were introduced.
 
 ### Congruence
 
@@ -257,10 +248,15 @@ wraps uniformly and the stride survives. In particular, u8 `neg(3Z+1)` gives
 contracts explicitly prove modulus zero and the exact unsigned result residue
 for constant add/sub/neg, in addition to unchanged universal soundness.
 
-This round uses the review's permitted fallback for mixed wrapping. It does
-not implement the full split-range stride algorithm. For example, u8
-`(129, 0) + constant(127)` returns top although `(127, 0)` is the best class;
-`neg((129, 0))` has the same limitation. No general optimality is claimed.
+This implementation chooses a sound fallback for mixed-wrapping add/sub:
+when results cross a wrap boundary, it uses `gcd(stride, 2^N)`, where
+`stride = gcd(s1, s2)` and `N` is the word width. The
+`lemma_wrapping_congruence` proof guarantees soundness, but the fallback
+does not guarantee optimal precision or implement full split-range stride
+analysis. No-wrap and uniform-wrap cases retain the stride, as described above.
+For example, at u8, `new(129, 0) + constant(127)` returns Top, while the
+concrete result set is `{127, 0}` and its best congruence abstraction is
+`new(127, 0)`. `neg(new(129, 0))` has the same limitation.
 The rank/stabilization theorem, signed arithmetic instance, and meet containment
 fast path remain permitted follow-ups. Multiplication and division are deferred.
 Quantified proofs use explicit triggers; #114 adds no trusted items.

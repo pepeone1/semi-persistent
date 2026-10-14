@@ -374,5 +374,5 @@ regenerate them. The source contains no executable `admit()` or `assume()`.
 | Unum domain | Sound unbounded/bounded add and mul; no general exactness theorem |
 | Congruence | Generic `Domain` and `Arith<Unsigned<W>>`; exact meet/refinement and LUB join |
 | Reduced product | 4-domain (Tnum×Anum×Interval×Unum) |
-| Multi-width | u8, u16, u32, u64 (`u128` disabled) |
+| Multi-width | Legacy macro domains: u8, u16, u32, u64 (`d128` disabled). Generic `Congruence<W>`: u8, u16, u32, u64, u128. |
 | Rust mirror tests | See `proof-status.md` for the regenerated count |
