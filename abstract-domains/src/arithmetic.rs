@@ -1,9 +1,10 @@
 // Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 //! Shared GCD, Bézout and finite-word CRT helpers. No domain operations.
-#![allow(unused_imports, unused_variables)]
 use crate::word::Word;
+#[cfg(verus_keep_ghost)]
 use vstd::arithmetic::div_mod::*;
+#[cfg(verus_keep_ghost)]
 use vstd::arithmetic::power2::*;
 use vstd::prelude::*;
 
@@ -1022,7 +1023,7 @@ pub fn crt_merge<W: Word>(m1: W, r1: W, m2: W, r2: W) -> (result: CrtMergeResult
             None => CrtMergeResult::Singleton { value: residue },
             Some(modulus) => match residue.checked_add(modulus) {
                 None => CrtMergeResult::Singleton { value: residue },
-                Some(next) => { proof { next.lemma_view_bounded(); } CrtMergeResult::Class { modulus, residue } },
+                Some(_next) => { proof { _next.lemma_view_bounded(); } CrtMergeResult::Class { modulus, residue } },
             },
         },
     };
