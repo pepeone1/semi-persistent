@@ -290,12 +290,12 @@ Verification uses the repository-pinned Verus
 The finite-height/rank theorem remains future lattice work; this domain does
 not yet prove the termination bound for join-based widening.
 
-### Week 6 lattice verification
+### Congruence lattice verification
 
 `src/congruence_laws.rs` verifies structural idempotence, commutativity,
 associativity, top/bottom identity and absorption for meet and join (ten laws).
-The private generic verification harnesses include a u128 instance. They call
-existing Congruence operations through local copies of the `BotOr` meet/join
+The private generic verification harnesses cover every `W: Word`, including
+u128. They call existing Congruence operations through local copies of the `BotOr` meet/join
 cases in `lattice.rs` to retain exact intersection and
 LUB contracts, which the general `Domain` interface intentionally does not
 require. Canonical uniqueness lifts semantic equality to structural equality;
