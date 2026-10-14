@@ -36,7 +36,7 @@ pub open spec fn is_gcd(d: nat, a: nat, b: nat) -> bool {
 }
 
 /// Proves that a Euclidean step preserves common divisors.
-pub proof fn euclidean_step(a: nat, b: nat, d: nat)
+pub proof fn lemma_euclidean_step(a: nat, b: nat, d: nat)
     requires
         b > 0,
         d > 0,
@@ -207,7 +207,7 @@ pub open spec fn are_congruences_compatible(
 }
 
 /// Proves that a common solution implies compatibility of the congruences.
-pub proof fn crt_solution_implies_compatible(
+pub proof fn lemma_crt_solution_implies_compatible(
     g: nat,
     m1: nat,
     r1: nat,
@@ -426,7 +426,7 @@ pub proof fn crt_solution_implies_compatible(
 }
 
 /// Incompatible residues admit no common integer solution.
-pub proof fn crt_incompatible_no_solution(
+pub proof fn lemma_crt_incompatible_no_solution(
     g: nat, m1: nat, r1: nat, m2: nat, r2: nat,
 )
     requires m1 > 0, m2 > 0, is_gcd(g, m1, m2),
@@ -437,13 +437,13 @@ pub proof fn crt_incompatible_no_solution(
     assert forall|x: int| !#[trigger] is_common_congruence_solution(
         x, m1, r1, m2, r2) by {
         if is_common_congruence_solution(x, m1, r1, m2, r2) {
-            crt_solution_implies_compatible(g, m1, r1, m2, r2, x);
+            lemma_crt_solution_implies_compatible(g, m1, r1, m2, r2, x);
         }
     }
 }
 
 /// A positive exact divisor has a positive quotient.
-pub proof fn positive_exact_quotient(a: nat, d: nat)
+pub proof fn lemma_positive_exact_quotient(a: nat, d: nat)
     requires a > 0, d > 0, a % d == 0,
     ensures a / d > 0,
 {
@@ -453,36 +453,15 @@ pub proof fn positive_exact_quotient(a: nat, d: nat)
 }
 
 /// Adding a multiple of a modulus preserves its remainder.
-pub proof fn congruence_shift(x: int, y: int, m: int, q: int)
+pub proof fn lemma_congruence_shift(x: int, y: int, m: int, q: int)
     requires m > 0, x == y + m * q,
     ensures x % m == y % m,
 {
     vstd::arithmetic::div_mod::lemma_mod_multiples_vanish(q, y, m);
 }
 
-/// Convert Rust's signed remainder to a canonical mathematical residue.
-pub proof fn signed_remainder_normalized(s: int, n: int, rem: int)
-    requires n > 0, rem == vstd::arithmetic::div_mod::rust_rem(s, n),
-    ensures (if rem < 0 { rem + n } else { rem }) == s % n,
-{
-    if s < 0 {
-        vstd::arithmetic::div_mod::lemma_fundamental_div_mod(-s, n);
-        let q = -((-s) / n);
-        assert(s == n * q + rem) by (nonlinear_arith)
-            requires -s == n * ((-s) / n) + (-s) % n,
-                q == -((-s) / n), rem == -((-s) % n);
-        let r = if rem < 0 { rem + n } else { rem };
-        let quotient = if rem < 0 { q - 1 } else { q };
-        assert(s == n * quotient + r) by (nonlinear_arith)
-            requires s == n * q + rem,
-                r == if rem < 0 { rem + n } else { rem },
-                quotient == if rem < 0 { q - 1 } else { q };
-        vstd::arithmetic::div_mod::lemma_fundamental_div_mod_converse(s, n, quotient, r);
-    }
-}
-
 /// The reduced CRT multiplier constructs a common solution.
-pub proof fn crt_candidate_solution(
+pub proof fn lemma_crt_candidate_solution(
     m1: int, a1: int, m2: int, a2: int,
     g: int, s: int, t: int, k: int,
 )
@@ -500,7 +479,7 @@ pub proof fn crt_candidate_solution(
     let n = m2 / g;
     let delta = a2 / g - a1 / g;
     lemma_fundamental_div_mod(m2, g);
-    positive_exact_quotient(m2 as nat, g as nat);
+    lemma_positive_exact_quotient(m2 as nat, g as nat);
     lemma_fundamental_div_mod(a1, g);
     lemma_fundamental_div_mod(a2, g);
     assert(a2 - a1 == g * delta) by (nonlinear_arith)
@@ -524,12 +503,12 @@ pub proof fn crt_candidate_solution(
     assert((g - t * m2) * delta + (m2 * p) * h
         == g * delta + m2 * (p * h - t * delta)) by (nonlinear_arith);
     assert(a1 + m1 * k == a2 + m2 * (p * h - t * delta));
-    congruence_shift(a1 + m1 * k, a1, m1, k);
-    congruence_shift(a1 + m1 * k, a2, m2, p * h - t * delta);
+    lemma_congruence_shift(a1 + m1 * k, a1, m1, k);
+    lemma_congruence_shift(a1 + m1 * k, a2, m2, p * h - t * delta);
 }
 
 /// Reduction by a common multiple preserves each input constraint.
-pub proof fn crt_normalize_solution(x: int, m1: nat, m2: nat, d: nat)
+pub proof fn lemma_crt_normalize_solution(x: int, m1: nat, m2: nat, d: nat)
     requires m1 > 0, m2 > 0, is_gcd(d, m1, m2),
     ensures
         (x % (((m1 / d) * m2) as int)) % (m1 as int) == x % (m1 as int),
@@ -543,7 +522,7 @@ pub proof fn crt_normalize_solution(x: int, m1: nat, m2: nat, d: nat)
     let n = b / g;
     lemma_fundamental_div_mod(a, g);
     lemma_fundamental_div_mod(b, g);
-    positive_exact_quotient(m1, d);
+    lemma_positive_exact_quotient(m1, d);
     let l = p * b;
     assert(l > 0) by (nonlinear_arith) requires p > 0, b > 0, l == p * b;
     assert(l == a * n) by (nonlinear_arith)
@@ -555,12 +534,12 @@ pub proof fn crt_normalize_solution(x: int, m1: nat, m2: nat, d: nat)
         requires x == l * q + r, l == a * n;
     assert(x == r + b * (p * q)) by (nonlinear_arith)
         requires x == l * q + r, l == p * b;
-    congruence_shift(x, r, a, n * q);
-    congruence_shift(x, r, b, p * q);
+    lemma_congruence_shift(x, r, a, n * q);
+    lemma_congruence_shift(x, r, b, p * q);
 }
 
 /// The GCD is unique, including gcd(0, 0).
-pub proof fn gcd_unique(g: nat, d: nat, a: nat, b: nat)
+pub proof fn lemma_gcd_unique(g: nat, d: nat, a: nat, b: nat)
     requires is_gcd(g, a, b), is_gcd(d, a, b),
     ensures g == d,
 {
@@ -573,7 +552,7 @@ pub proof fn gcd_unique(g: nat, d: nat, a: nat, b: nat)
 }
 
 /// Regroup four factors using associativity and commutativity.
-pub proof fn mul_regroup(a: int, b: int, c: int, d: int)
+pub proof fn lemma_mul_regroup(a: int, b: int, c: int, d: int)
     ensures (a * b) * (c * d) == (b * c) * (a * d),
 {
     use vstd::arithmetic::mul::{lemma_mul_is_associative, lemma_mul_is_commutative};
@@ -584,7 +563,7 @@ pub proof fn mul_regroup(a: int, b: int, c: int, d: int)
 }
 
 /// Bezout's identity makes every common multiple a multiple of the LCM.
-pub proof fn common_multiple_is_lcm_multiple(
+pub proof fn lemma_common_multiple_is_lcm_multiple(
     z: int, a: int, b: int, g: int, s: int, t: int,
 )
     requires a > 0, b > 0, g > 0,
@@ -597,7 +576,7 @@ pub proof fn common_multiple_is_lcm_multiple(
     lemma_fundamental_div_mod(a, g);
     lemma_fundamental_div_mod(z, a);
     lemma_fundamental_div_mod(z, b);
-    positive_exact_quotient(a as nat, g as nat);
+    lemma_positive_exact_quotient(a as nat, g as nat);
     let p = a / g;
     let l = p * b;
     let u = z / a;
@@ -608,8 +587,8 @@ pub proof fn common_multiple_is_lcm_multiple(
         requires a == g * p, l == p * b;
     assert((s * a + t * b) * z == s * a * z + t * b * z)
         by (nonlinear_arith);
-    mul_regroup(s, a, b, v);
-    mul_regroup(t, b, a, u);
+    lemma_mul_regroup(s, a, b, v);
+    lemma_mul_regroup(t, b, a, u);
     vstd::arithmetic::mul::lemma_mul_is_commutative(a, b);
     vstd::arithmetic::mul::lemma_mul_is_distributive_add(a * b, s * v, t * u);
     assert(s * a * (b * v) + t * b * (a * u)
@@ -617,11 +596,11 @@ pub proof fn common_multiple_is_lcm_multiple(
     assert(g * z == (g * l) * w);
     assert(z == l * w) by (nonlinear_arith)
         requires g > 0, g * z == (g * l) * w;
-    congruence_shift(z, 0, l, w);
+    lemma_congruence_shift(z, 0, l, w);
 }
 
 /// A canonical common solution generates exactly the intersection.
-pub proof fn crt_solution_class_exact(
+pub proof fn lemma_crt_solution_class_exact(
     x: int, residue: nat, m1: nat, r1: nat, m2: nat, r2: nat,
     g: nat, s: int, t: int,
 )
@@ -635,32 +614,15 @@ pub proof fn crt_solution_class_exact(
 {
     let l = ((m1 / g) * m2) as int;
     let r = residue as int;
-    crt_normalize_solution(x, m1, m2, g);
+    lemma_crt_normalize_solution(x, m1, m2, g);
     if is_common_congruence_solution(x, m1, r1, m2, r2) {
         vstd::arithmetic::div_mod::lemma_mod_equivalence(x, r, m1 as int);
         vstd::arithmetic::div_mod::lemma_mod_equivalence(x, r, m2 as int);
-        common_multiple_is_lcm_multiple(x - r, m1 as int, m2 as int,
+        lemma_common_multiple_is_lcm_multiple(x - r, m1 as int, m2 as int,
             g as int, s, t);
         vstd::arithmetic::div_mod::lemma_mod_equivalence(x, r, l);
         vstd::arithmetic::div_mod::lemma_small_mod(residue, l as nat);
     }
-}
-
-/// Normalizing modulo m preserves residues modulo every divisor of m.
-pub proof fn normalize_preserves_divisor(r: nat, m: nat, d: nat)
-    requires m > 0, d > 0, m % d == 0,
-    ensures (r % m) % d == r % d,
-{
-    use vstd::arithmetic::div_mod::lemma_fundamental_div_mod;
-    lemma_fundamental_div_mod(r as int, m as int);
-    lemma_fundamental_div_mod(m as int, d as int);
-    let q = (r / m) as int;
-    let k = (m / d) as int;
-    assert(r as int == (r % m) as int + (d as int) * (k * q))
-        by (nonlinear_arith)
-        requires r as int == (m as int) * q + (r % m) as int,
-            m as int == (d as int) * k;
-    congruence_shift(r as int, (r % m) as int, d as int, k * q);
 }
 
 /// Connect the recursive specification to the traditional greatest divisor.
@@ -679,9 +641,9 @@ pub proof fn lemma_gcd_spec(a: nat, b: nat)
         lemma_mod_bound(a as int, b as int);
         lemma_gcd_spec(b, a % b);
         let g = gcd_spec(b, a % b);
-        euclidean_step(a, b, g);
+        lemma_euclidean_step(a, b, g);
         assert forall|k: nat| #[trigger] is_common_divisor(k, a, b) implies k <= g by {
-            euclidean_step(a, b, k);
+            lemma_euclidean_step(a, b, k);
         }
     }
 }
@@ -693,7 +655,7 @@ pub proof fn lemma_gcd_divisor(a: nat, b: nat, d: nat)
     decreases b,
 {
     if b > 0 {
-        euclidean_step(a, b, d);
+        lemma_euclidean_step(a, b, d);
         lemma_mod_bound(a as int, b as int);
         lemma_gcd_divisor(b, a % b, d);
     }
@@ -709,7 +671,7 @@ pub proof fn lemma_gcd_symmetric(a: nat, b: nat)
             assert(is_common_divisor(k, b, a));
         }
     }
-    gcd_unique(gcd_spec(a, b), gcd_spec(b, a), a, b);
+    lemma_gcd_unique(gcd_spec(a, b), gcd_spec(b, a), a, b);
 }
 
 /// Divisibility is transitive, including a zero dividend.
@@ -845,8 +807,8 @@ pub proof fn lemma_gcd_reduced(a: nat, b: nat)
     let g = gcd_spec(a, b);
     let p = a / g;
     let n = b / g;
-    positive_exact_quotient(a, g);
-    positive_exact_quotient(b, g);
+    lemma_positive_exact_quotient(a, g);
+    lemma_positive_exact_quotient(b, g);
     lemma_gcd_spec(p, n);
     let d = gcd_spec(p, n);
     lemma_fundamental_div_mod(a as int, g as int);
@@ -927,14 +889,14 @@ fn inverse_mod<W: Word>(a: W, n: W) -> (s: W)
         assert(old_r.view() == 1);
         assert(old_x * a.view() == 1 + n.view() * (-old_y)) by (nonlinear_arith)
             requires 1 == old_x * a.view() + old_y * n.view();
-        congruence_shift(old_x * a.view(), 1, n.view() as int, -old_y);
+        lemma_congruence_shift(old_x * a.view(), 1, n.view() as int, -old_y);
         lemma_mul_mod_noop_left(old_x, a.view() as int, n.view() as int);
     }
     old_s
 }
 
 /// Recover an exact mathematical Bézout witness from a modular inverse.
-proof fn inverse_bezout(a: nat, n: nat, s: nat) -> (t: int)
+proof fn lemma_inverse_bezout(a: nat, n: nat, s: nat) -> (t: int)
     requires n > 0, (s * a) % n == 1nat % n,
     ensures s * a + t * n == 1,
 {
@@ -962,7 +924,7 @@ pub fn crt_merge<W: Word>(m1: W, r1: W, m2: W, r2: W) -> (result: CrtMergeResult
     }
     if !a1.urem(g).eq(a2.urem(g)) {
         proof {
-            crt_incompatible_no_solution(g.view(), m1.view(), a1.view(), m2.view(), a2.view());
+            lemma_crt_incompatible_no_solution(g.view(), m1.view(), a1.view(), m2.view(), a2.view());
             assert forall|x: W| !#[trigger] is_common_congruence_solution(
                 x.view() as int, m1.view(), r1.view(), m2.view(), r2.view()) by {
                 assert(!is_common_congruence_solution(x.view() as int, m1.view(), a1.view(), m2.view(), a2.view()));
@@ -973,12 +935,12 @@ pub fn crt_merge<W: Word>(m1: W, r1: W, m2: W, r2: W) -> (result: CrtMergeResult
     let p = m1.udiv(g);
     let n = m2.udiv(g);
     proof {
-        positive_exact_quotient(m1.view(), g.view());
-        positive_exact_quotient(m2.view(), g.view());
+        lemma_positive_exact_quotient(m1.view(), g.view());
+        lemma_positive_exact_quotient(m2.view(), g.view());
         lemma_gcd_reduced(m1.view(), m2.view());
     }
     let s = inverse_mod(p, n);
-    let ghost t = inverse_bezout(p.view(), n.view(), s.view());
+    let ghost t = lemma_inverse_bezout(p.view(), n.view(), s.view());
     let q1 = a1.udiv(g).urem(n);
     let q2 = a2.udiv(g).urem(n);
     proof {
@@ -1001,7 +963,7 @@ pub fn crt_merge<W: Word>(m1: W, r1: W, m2: W, r2: W) -> (result: CrtMergeResult
         lemma_mul_mod_noop_left((a2.view() / g.view()) as int - (a1.view() / g.view()) as int,
             s.view() as int, n.view() as int);
         lemma_small_mod(k.view(), n.view());
-        crt_candidate_solution(m1.view() as int, a1.view() as int, m2.view() as int, a2.view() as int,
+        lemma_crt_candidate_solution(m1.view() as int, a1.view() as int, m2.view() as int, a2.view() as int,
             g.view() as int, s.view() as int, t, k.view() as int);
         assert(lcm == m1.view() * n.view()) by (nonlinear_arith)
             requires m1.view() == g.view() * p.view(), m2.view() == g.view() * n.view(), lcm == p.view() * m2.view();
@@ -1010,7 +972,7 @@ pub fn crt_merge<W: Word>(m1: W, r1: W, m2: W, r2: W) -> (result: CrtMergeResult
                 candidate == a1.view() + m1.view() * k.view(), lcm == m1.view() * n.view();
         assert forall|x: W| #[trigger] is_common_congruence_solution(x.view() as int, m1.view(), r1.view(), m2.view(), r2.view())
             <==> x.view() % lcm == candidate by {
-            crt_solution_class_exact(x.view() as int, candidate, m1.view(), r1.view(), m2.view(), r2.view(),
+            lemma_crt_solution_class_exact(x.view() as int, candidate, m1.view(), r1.view(), m2.view(), r2.view(),
                 g.view(), s.view() as int, t);
         }
     }
@@ -1046,7 +1008,7 @@ pub fn crt_merge<W: Word>(m1: W, r1: W, m2: W, r2: W) -> (result: CrtMergeResult
 
 /// An odd number is coprime with every power of two. These coefficients
 /// exist only in proofs; no signed or widened arithmetic is executed.
-proof fn odd_pow2_bezout(a: nat, bits: nat) -> (witness: (int, int))
+proof fn lemma_odd_pow2_bezout(a: nat, bits: nat) -> (witness: (int, int))
     requires a % 2 == 1,
     ensures witness.0 * a + witness.1 * pow2(bits) == 1,
     decreases bits,
@@ -1055,7 +1017,7 @@ proof fn odd_pow2_bezout(a: nat, bits: nat) -> (witness: (int, int))
         vstd::arithmetic::power::lemma_pow0(2);
         (0, 1)
     } else {
-        let (s, t) = odd_pow2_bezout(a, (bits - 1) as nat);
+        let (s, t) = lemma_odd_pow2_bezout(a, (bits - 1) as nat);
         let p = pow2((bits - 1) as nat);
         lemma_pow2_unfold(bits);
         lemma_fundamental_div_mod(t, 2);
@@ -1092,7 +1054,7 @@ pub proof fn lemma_gcd_pow2(m: nat, bits: nat, exponent: nat)
         let k = (bits - exponent) as nat;
         lemma_pow2_adds(exponent, k);
         lemma_fundamental_div_mod(m as int, p as int);
-        let (s, t) = odd_pow2_bezout(q, k);
+        let (s, t) = lemma_odd_pow2_bezout(q, k);
         assert(s * m + t * pow2(bits) == p) by (nonlinear_arith)
             requires m == q * p, pow2(bits) == p * pow2(k), s * q + t * pow2(k) == 1;
         lemma_mod_multiples_basic(pow2(k) as int, p as int);
@@ -1171,7 +1133,7 @@ pub proof fn lemma_wrapping_congruence<W: Word>(m: nat, x: int)
     let k = n / g;
     assert(x == x % n + g * (k * q)) by (nonlinear_arith)
         requires x == n * q + x % n, n == g * k;
-    congruence_shift(x, x % n, g, k * q);
+    lemma_congruence_shift(x, x % n, g, k * q);
 }
 
 } // verus!

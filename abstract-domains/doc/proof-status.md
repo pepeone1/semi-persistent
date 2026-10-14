@@ -154,7 +154,7 @@ The runtime `ExtendedGcd`/`extended_gcd` API and the unused `gcd_wide`,
 callers on the available branches and the dependent PRs. Their old tests were
 adapted to the retained GCD API and new modular/CRT behavior; tests specific to
 removed widened products were retired. Public ghost/spec Bézout and CRT lemmas,
-including `is_extended_gcd` and `crt_solution_class_exact`, remain available.
+including `is_extended_gcd` and `lemma_crt_solution_class_exact`, remain available.
 
 No Congruence domain migration, multiplication transfer, or reduced-product
 integration is implemented here. No proof bypasses or new trusted items were
