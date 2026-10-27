@@ -28,6 +28,7 @@ pub mod bool4;
 pub mod bools;
 pub mod chopped;
 pub mod congruence;
+pub mod congruence_laws;
 pub mod div;
 pub mod domains;
 pub mod exec_tnum;

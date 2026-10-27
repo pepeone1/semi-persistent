@@ -1,6 +1,6 @@
 # Abstract Domains Proof Status
 
-Last refreshed: 2026-10-08.
+Last refreshed: 2026-10-27.
 
 ## Current result
 
@@ -24,7 +24,8 @@ Enabled legacy macro-domain widths:
 
 The `d128` macro invocation remains disabled because its bitvector obligations
 exceed the current solver capacity. This is separate from generic `W: Word`
-code: `Word`, the shared GCD/CRT helpers, and `Interval<W>` support u128.
+code: `Word`, the shared GCD/CRT helpers, `Interval<W>`, and `Congruence<W>`
+support u128.
 The arithmetic helpers compute in `W`; they do not use widened intermediates.
 
 The separate Rust mirror suite can be run with:
@@ -73,7 +74,7 @@ cargo test -p semi-persistent-abstract-domains --release --test crt exhaustive_u
 | L3 | chopped bounded-width domains | every stated contract verifies; containment covers the explicit operation inventory in `design.md`, not every defined operation |
 | L4 | `ExecTnum`, `ExecAnum`, `ExecUnum`, `Interval` at four enabled widths | every method verifies its stated contract; containment scope is listed below |
 | L4 | Shared GCD/CRT helpers | shared mathematical proofs, deterministic GCD, modular inverse, exact finite CRT and machine-modulus GCD verified |
-| L4 | `Congruence<W>` | generic unsigned semantics, canonical normalization, nonemptiness and canonicality proved; full `Domain` implementation not yet available |
+| L4 | `Congruence<W>` | generic canonical `Domain`; exact refinement/meet, LUB join, join-based widen, and sound unsigned add/sub/neg |
 
 All enabled L4 results are proved well formed where their contracts say so.
 The current **universal containment** contracts are:
@@ -84,6 +85,7 @@ The current **universal containment** contracts are:
 | `ExecAnum` | `add`, `div_const` |
 | `ExecUnum` | `top`, `add`, `from_interval`, `mul` |
 | `Interval` | `add`, `meet`, `join`, `div_const` |
+| `Congruence<W>` | exact `refines`/`leq`/`meet`, LUB `join`, `widen`, unsigned `add`/`sub`/`neg` |
 
 The `ExecUnum` proofs use native/spec bridge lemmas, the L3 `ChoppedUnum`
 soundness theorems, explicit overflow-to-top cases, and interval-to-Unum range
@@ -132,7 +134,7 @@ The measured widening internal to upstream `Word::mulmod` remains unchanged.
 
 Callers no longer inspect a widened residue or reconstruct overflow cases.
 Congruence's modulus-zero constants must be handled **before** calling CRT.
-No conversion into `BotOr<Congruence<W>>` or Congruence meet is implemented here.
+The helper stays independent of `BotOr`; Congruence meet maps its result.
 The unused `crt_compatible` and `checked_lcm` executables were removed after
 checking callers; their necessary mathematical facts remain shared. There are
 no existential GCD result specifications or `#![auto]` shortcuts in this module.
@@ -156,15 +158,16 @@ adapted to the retained GCD API and new modular/CRT behavior; tests specific to
 removed widened products were retired. Public ghost/spec Bézout and CRT lemmas,
 including `is_extended_gcd` and `lemma_crt_solution_class_exact`, remain available.
 
-No Congruence domain migration, multiplication transfer, or reduced-product
-integration is implemented here. No proof bypasses or new trusted items were
-introduced.
+The shared-helper change adds no multiplication transfer or reduced-product
+integration. Unit A integration, `Refine` for Congruence with `Facts.c`, and
+grid reduction remain follow-up work outside this domain. No proof bypasses or new
+trusted items were introduced.
 
 ### Congruence
 
-`src/congruence.rs` implements the semantic core as `Congruence<W: Word>`
-(with the bound on its implementation). Fields are private. This implementation adds
-`domains::d8/d16/d32/d64::Congruence` as aliases of the generic type.
+`src/congruence.rs` implements the domain as `Congruence<W: Word>`
+(with the bound on its implementation). Fields are private. The existing
+`domains::d8/d16/d32/d64::Congruence` names are aliases of the generic type.
 The canonical representation is:
 
 - Singleton: `modulus = 0, residue = x`.
@@ -181,7 +184,8 @@ is the integer congruence restricted to the finite unsigned word range.
 Wrapping arithmetic can lose exactness: at u8, adding 1 to `(3, 0)` produces
 `{0, 1, 4, ..., 253}`, since 255 wraps to 0. Any congruence containing both
 0 and 1 is Top, so the best congruence abstraction is Top. A no-wrap condition
-can preserve the integer-congruence precision.
+can preserve the integer-congruence precision; uniform-wrap cases also preserve
+the stride. Mixed-wrap cases can still lose precision as described below.
 
 `new(m, r)` normalizes a raw class: for `m = 0` it denotes `{r}`, otherwise
 it denotes `{x | x % m = r % m}`. The constructor proves preservation of the
@@ -207,22 +211,101 @@ full canonicality so it also applies before singleton collapse.
 `lemma_nonempty` follows from residue membership. `lemma_canonical` proves
 that equal gamma sets of well-formed values imply structural equality: residues are the
 least members, and nonconstant steps are determined by the second members.
-Both use the common `Domain` proof obligations as inherent methods, without
+Both use the common `Canonical` proof obligations as inherent methods, without
 proof bypasses or changes to the trust boundary.
 
-Congruence has no internal bottom; empty results use the existing external
-`BotOr` architecture.
+Congruence implements `Domain<C = W>`, `Canonical`, and `Arith<Unsigned<W>>` on this carrier.
+There is no internal bottom: exact meet returns `BotOr::Bot` iff the
+intersection is empty. Positive-modulus inputs use the shared CRT helper;
+constants are handled before calling it. Nonempty results are canonical.
 
-`cargo test --test congruence` passes against the real implementation.
-The exhaustive oracle checks all 65,536 raw u8 pairs against all 256 words,
-including normalization, nonemptiness, canonical invariants, and unique
-representation of all 16,640 distinct sets. Other cases cover constant/top,
-singleton collapse, second-member boundaries, all four word widths and width
-aliases. The oracle also checks the canonical query helpers against the sets.
+`refines` and `Domain::leq` decide semantic containment exactly. Join uses
+`gcd(gcd(s1, s2), abs(r1-r2))`; its contract proves both upper-bound properties
+and containment in **every** common upper bound. The proof uses canonical
+first/second members to force stride divisibility, then the shared GCD
+maximal-divisibility lemmas. `widen` calls join. For a fixed finite word
+universe there are finitely many canonical sets, so ascending chains
+stabilize; the interface itself requires only upper-bound soundness.
 
-`cargo test` passes the integration tests.
+`max_member` proves membership and an upper bound on every represented word.
+It uses `W::max()`, `wrapping_sub`, and `urem`. Join computes the unsigned
+residue distance in `W`; arithmetic has no widened intermediates or conversion
+bridges and supports `Congruence<u128>`.
+
+Addition starts with `wrapping_add` and one stride GCD. Its extreme-member
+`checked_add` checks distinguish no wrapping, uniform wrapping, and mixed
+wrapping. Direct subtraction starts with `wrapping_sub`, one stride GCD,
+and corresponding `checked_sub` checks. Uniform cases retain the stride;
+mixed cases use the nonzero `gcd_machine_modulus` helper. The zero-stride
+case means both operands are constants and returns before calling that helper;
+there is no attempt to represent the machine modulus as a word. The exponent
+helper remains available for clients needing to represent that zero-input GCD.
+The shared helper performs its own necessary machine-modulus GCD only in the
+mixed case; subtraction does not construct an intermediate abstract negation.
+
+Negation is direct subtraction from zero. When zero is absent, every member
+wraps uniformly and the stride survives. In particular, u8 `neg(3Z+1)` gives
+`3Z`, and `neg(5Z+3)` gives `5Z+3`. The inherent and `Arith<Unsigned<W>>`
+contracts explicitly prove modulus zero and the exact unsigned result residue
+for constant add/sub/neg, in addition to unchanged universal soundness.
+
+This implementation chooses a sound fallback for mixed-wrapping add/sub:
+when results cross a wrap boundary, it uses `gcd(stride, 2^N)`, where
+`stride = gcd(s1, s2)` and `N` is the word width. The
+`lemma_wrapping_congruence` proof guarantees soundness, but the fallback
+does not guarantee optimal precision or implement full split-range stride
+analysis. No-wrap and uniform-wrap cases retain the stride, as described above.
+For example, at u8, `new(129, 0) + constant(127)` returns Top, while the
+concrete result set is `{127, 0}` and its best congruence abstraction is
+`new(127, 0)`. `neg(new(129, 0))` has the same limitation.
+The rank/stabilization theorem, signed arithmetic instance, and meet containment
+fast path remain permitted follow-ups. Multiplication and division are deferred.
+Quantified proofs use explicit triggers; these operations add no trusted items.
+
+The Congruence runtime suite checks:
+
+- All 65,536 raw u8 pairs against all 256 words, including normalization,
+  nonemptiness, canonical invariants, and unique representation of all 16,640 sets.
+- All 16,640 canonical u8 classes for exact maximum, negation soundness,
+  and optimal negation when zero is absent.
+- All 65,536 u8 constant operand pairs for exact add/sub, and all constants
+  for exact negation in the unary oracle.
+- All 16,640 canonical classes against all 256 constants (4,259,840 pairs),
+  checking every concrete member for add and both subtraction orders, and
+  comparing uniform-wrap precision against an independent best-class oracle.
+- A 99-description boundary-focused family for exact refinement/meet,
+  LUB join against **all 16,640 possible canonical upper bounds**, widen,
+  and add/sub over every concrete operand pair. This does not enumerate all
+  pairs of nonconstant canonical abstract inputs.
+- Trait and inherent API regressions at u8/u16/u32/u64/u128, external Bottom,
+  constants/top, singleton collapse, CRT outcomes, and existing width aliases.
+  u128 arithmetic tests include bit 64, bit 127, MAX, zero, and wrapping.
+
 Verification uses the repository-pinned Verus
 `0.2026.09.20.aef82ed`, matching the pinned `vstd` dependency.
 
-The finite-height/rank theorem remains future lattice work; this semantic core
-does not yet prove the termination bound for join-based widening.
+The finite-height/rank theorem remains future lattice work; this domain does
+not yet prove the termination bound for join-based widening.
+
+### Congruence lattice verification
+
+`src/congruence_laws.rs` verifies structural idempotence, commutativity,
+associativity, top/bottom identity and absorption for meet and join (ten laws).
+The private generic verification harnesses cover every `W: Word`, including
+u128. They call existing Congruence operations through local copies of the `BotOr` meet/join
+cases in `lattice.rs` to retain exact intersection and
+LUB contracts, which the general `Domain` interface intentionally does not
+require. Canonical uniqueness lifts semantic equality to structural equality;
+nonemptiness distinguishes values from bottom. No arithmetic algorithms,
+existing contracts, or trust assumptions are changed.
+
+The `small_model_transfers_and_lattice_laws` oracle enumerates all 81 raw descriptions with
+modulus/residue in `0..=8`, all 6,561 ordered input pairs, and all 256 concrete
+u8 values (including wrapping results). It checks canonicalization, exact
+refinement/intersection, join/widen containment, and add/sub/neg containment
+using concrete bitsets. All ordered triples (with repetition) of deduplicated canonical states from
+that family plus bottom check the actual `BotOr` meet/join associativity; unary and
+binary checks cover the other eight laws. Existing full-u8 normalization,
+negation, boundary, and all-canonical-upper-bound tests remain in place.
+The oracle is exhaustive within its stated input model, not over every pair
+or triple of all 16,640 canonical u8 classes.
